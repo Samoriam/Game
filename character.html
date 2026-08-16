@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Adventure Game</title>
+   <style>
+    body {
+      margin: 0;
+      background: #1a1a2e;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+      color: white;
+    }
+    canvas {
+      background: #87CEEB; /* sky blue */
+      border: 3px solid #0f3460;
+      border-radius: 8px;
+    }
+    #ui {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      font-size: 16px;
+      background: rgba(0,0,0,0.7);
+      padding: 12px 16px;
+      border-radius: 8px;
+      line-height: 1.5;
+    }
+
+  </style>
+</head>
+<body>
+  <div id="ui">
+    Coins: <span id="coins">0</span> | Ammo: <span id="ammo">12</span>/12<br>
+   ← → Walk | ↑ Jump | ↓ Crouch | Space = Shoot | Hold Left Click = Aim<br>
+    Shift = Reload
+  </div>
+
+  <canvas id="game" width="1000" height="600"></canvas>
+
+  <script src="game.js"></script>
+</body>
+</html>
