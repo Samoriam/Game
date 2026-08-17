@@ -1,6 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-const ammoDisplay = document.getElementById("ammo");
+const ammoDisplay1 = document.getElementById("ammo1");
+const ammoDisplay2 = document.getElementById("ammo2");
 
 // ===== PLAYER =====
 const player = {
@@ -16,23 +17,61 @@ const player = {
   facing: 1, // 1 = right, -1 = left
   state: "standing" // standing | crouching | laying
 };
+// ===== BLUE PLAYER =====
+const player2 = {
+  x: 150,
+  y: 450,
+  width: 40,
+  height: 80,
+  speed: 4,
+  jumpPower: -12,
+  gravity: 0.5,
+  vy: 0,
+  onGround: true,
+  facing: 1,
+  state: "standing"
+};
 let time = 0;
 
-// ===== GUN & AMMO =====
-let ammo = 12;
+// ===== GUN & AMMO (per-player) =====
+let ammo1 = 12;
+let ammo2 = 12;
 const maxAmmo = 12;
-let isReloading = false;
-let reloadTimer = 0;
+let isReloading1 = false;
+let isReloading2 = false;
+let reloadTimer1 = 0;
+let reloadTimer2 = 0;
 const reloadTime = 90;
 
 // ===== BULLETS =====
 const bullets = [];
 const bulletSpeed = 14;
 
+// Setup reload button handlers (if elements exist)
+const reloadBtn1 = document.getElementById("reload1");
+const reloadBtn2 = document.getElementById("reload2");
+if (reloadBtn1) {
+  reloadBtn1.addEventListener("click", () => {
+    if (!isReloading1 && ammo1 < maxAmmo) {
+      isReloading1 = true;
+      reloadTimer1 = reloadTime;
+    }
+  });
+}
+if (reloadBtn2) {
+  reloadBtn2.addEventListener("click", () => {
+    if (!isReloading2 && ammo2 < maxAmmo) {
+      isReloading2 = true;
+      reloadTimer2 = reloadTime;
+    }
+  });
+}
+
 
 // ===== KEYS & DOUBLE TAP =====
 const keys = {};
 let lastDownTime = 0;
+let lastDownTime2 = 0;
 
 // ===== EVENT LISTENERS =====
 window.addEventListener("keydown", e => {
@@ -45,14 +84,28 @@ window.addEventListener("keydown", e => {
   }
 
   // Reload with Shift
-  if ((key === "shift") && !isReloading && ammo < maxAmmo) {
-    isReloading = true;
-    reloadTimer = reloadTime;
+  // Reload with R
+  if (key === "r" && !isReloading1 && ammo1 < maxAmmo) {
+    isReloading1 = true;
+    reloadTimer1 = reloadTime;
+  }
+  // Reload blue with F
+  if (key === "f" && !isReloading2 && ammo2 < maxAmmo) {
+    isReloading2 = true;
+    reloadTimer2 = reloadTime;
   }
 
   // Shoot with Space
   if (key === " " || key === "spacebar") {
     shoot();
+  }
+
+  // Shoot with left/right Shift for player2/player1
+  if (e.code === "ShiftLeft") {
+    shootFrom(player2);
+  }
+  if (e.code === "ShiftRight") {
+    shootFrom(player);
   }
 
   // Double tap Down to lay down
@@ -62,6 +115,15 @@ window.addEventListener("keydown", e => {
       player.state = "laying";
     }
     lastDownTime = now;
+  }
+
+  // Double tap S to lay down for player2
+  if (key === "s") {
+    const now2 = Date.now();
+    if (now2 - lastDownTime2 < 300) {
+      player2.state = "laying";
+    }
+    lastDownTime2 = now2;
   }
 
   // Quick toggle crouch with C key (testing)
@@ -76,17 +138,28 @@ window.addEventListener("keyup", e => {
 
 // ===== SHOOT =====
 function shoot() {
-  if (isReloading || ammo <= 0) return;
-  if (player.state === "laying") return; // optional: can't shoot while laying
+  shootFrom(player);
+}
 
-  ammo--;
-  ammoDisplay.textContent = ammo;
+// Shoot from a specific player (supports player and player2)
+function shootFrom(p) {
+  if (p.state === "laying") return;
 
-  const direction = player.facing;
+  const isPlayer1 = p === player;
+  if (isPlayer1) {
+    if (isReloading1 || ammo1 <= 0) return;
+    ammo1--;
+    ammoDisplay1.textContent = ammo1;
+  } else {
+    if (isReloading2 || ammo2 <= 0) return;
+    ammo2--;
+    ammoDisplay2.textContent = ammo2;
+  }
 
+  const direction = p.facing;
   bullets.push({
-    x: player.x + (direction === 1 ? 145 : -150),
-    y: player.y + (player.state === "crouching" ? -10 :  8),
+    x: p.x + (direction === 1 ? 145 : -150),
+    y: p.y + (p.state === "crouching" ? -10 :  8),
     vx: direction * bulletSpeed,
     vy: 0,
     life: 70      
@@ -122,9 +195,40 @@ function update() {
     player.state = "standing";
   }
 
+  // ===== PLAYER2 (WASD) =====
+  if (keys["a"] && !keys["d"]) {
+    player2.x -= player2.speed;
+    player2.facing = -1;
+  }
+  if (keys["d"] && !keys["a"]) {
+    player2.x += player2.speed;
+    player2.facing = 1;
+  }
+
+  // Jump / Stand up for player2
+  if (keys["w"]) {
+    if (player2.state === "crouching" || player2.state === "laying") {
+      player2.state = "standing";
+    } else if (player2.onGround) {
+      player2.vy = player2.jumpPower;
+      player2.onGround = false;
+    }
+  }
+
+  // Crouch for player2
+  if (keys["s"] && player2.onGround && player2.state !== "laying") {
+    player2.state = "crouching";
+  } else if (!keys["s"] && player2.state === "crouching") {
+    player2.state = "standing";
+  }
+
   // Gravity & jumping
   player.vy += player.gravity;
   player.y += player.vy;
+
+  // Gravity & jumping for player2
+  player2.vy += player2.gravity;
+  player2.y += player2.vy;
 
   // Ground collision
   const groundY = 500;
@@ -133,10 +237,20 @@ function update() {
     player.vy = 0;
     player.onGround = true;
   }
+  // Ground collision for player2
+  if (player2.y >= groundY) {
+    player2.y = groundY;
+    player2.vy = 0;
+    player2.onGround = true;
+  }
 
   // Boundary collision
   if (player.x < 0) player.x = 0;
   if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+  // Boundary collision for player2
+  if (player2.x < 0) player2.x = 0;
+  if (player2.x + player2.width > canvas.width) player2.x = canvas.width - player2.width;
 
   // Update bullets
   for (let i = bullets.length - 1; i >= 0; i--) {
@@ -150,165 +264,169 @@ function update() {
   }
 
   // Reload
-  if (isReloading) {
-    reloadTimer--;
-    if (reloadTimer <= 0) {
-      isReloading = false;
-      ammo = maxAmmo;
-      ammoDisplay.textContent = ammo;
+  // Reload for player1 (red)
+  if (isReloading1) {
+    reloadTimer1--;
+    if (reloadTimer1 <= 0) {
+      isReloading1 = false;
+      ammo1 = maxAmmo;
+      ammoDisplay1.textContent = ammo1;
+    }
+  }
+  // Reload for player2 (blue)
+  if (isReloading2) {
+    reloadTimer2--;
+    if (reloadTimer2 <= 0) {
+      isReloading2 = false;
+      ammo2 = maxAmmo;
+      ammoDisplay2.textContent = ammo2;
     }
   }
 }
 
 // ===== DRAW =====
-function draw(state = player.state) {
+function draw() {
   // Clear canvas
   ctx.fillStyle = "#87CEEB";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // sway and bob for visual effect (optional)
-  const sway = Math.sin(time * 0.05) * 3;
-  const bob = Math.sin(time * 0.08) * 2;
-  const facing = player.facing;
-
-  // state-specific offsets (standing vs crouching)
-  const isCrouch = state === "crouching";
-  const legStartY = player.y + (isCrouch ? 45 : 40) + bob;
-  const legEndY = player.y + (isCrouch ? 80 : 110) + bob;
-  const legEndX = isCrouch ? 15 : 25;
-  const bodyY = player.y + (isCrouch ? -10 : -30) + bob;
-  const bodyH = isCrouch ? 50 : 70;
-  const headY = player.y + (isCrouch ? -40 : -55) + bob;
-  const headR = isCrouch ? 24 : 28;
-  const eyesY = player.y + (isCrouch ? -45 : -60) + bob;
-  const rightUpperStartX = player.x + 25 + sway;
-  const rightUpperStartY = player.y - 10 + bob;
-  const rightUpperEndX = player.x + (isCrouch ? 45 : 55) + sway;
-  const rightUpperEndY = player.y + (isCrouch ? 20 : 5) + bob;
-  const rightLowerEndX = player.x + (isCrouch ? 65 : 85) + sway;
-  const rightLowerEndY = player.y + (isCrouch ? 30 : 10) + bob;
-  const leftUpperStartX = player.x - 25 + sway;
-  const leftUpperStartY = player.y - 10 + bob;
-  const leftUpperEndX = player.x - (isCrouch ? 45 : 55) + sway;
-  const leftUpperEndY = player.y + (isCrouch ? 20 : 5) + bob;
-  const leftLowerEndX = player.x - (isCrouch ? 65 : 85) + sway;
-  const leftLowerEndY = player.y + (isCrouch ? 30 : 10) + bob;
-  const gunX = player.x + (facing === 1 ? (isCrouch ? 65 : 85) : -(isCrouch ? 65 : 85)) + sway;
-  const gunY = player.y + (isCrouch ? 30 : 10) + bob;
 
   // Draw ground
   ctx.fillStyle = "#228B22";
   ctx.fillRect(0, 500, canvas.width, canvas.height);
 
-  // ===== LEGS =====~
-  ctx.strokeStyle = "#e94560";
-  ctx.lineWidth = 8;
-  ctx.lineCap = "round";
+  // Helper to draw a player (shared logic)
+  function drawPlayer(p, colors) {
+    const sway = Math.sin(time * 0.05) * 3;
+    const bob = Math.sin(time * 0.08) * 2;
+    const facing = p.facing;
 
-  // Left leg
-  ctx.beginPath();
-  ctx.moveTo(player.x - 10 + sway, legStartY);
-  ctx.lineTo(player.x - legEndX + sway, legEndY);
-  ctx.stroke();
+    const isCrouch = p.state === "crouching";
+    const legStartY = p.y + (isCrouch ? 45 : 40) + bob;
+    const legEndY = p.y + (isCrouch ? 80 : 110) + bob;
+    const legEndX = isCrouch ? 15 : 25;
+    const bodyY = p.y + (isCrouch ? -10 : -30) + bob;
+    const bodyH = isCrouch ? 50 : 70;
+    const headY = p.y + (isCrouch ? -40 : -55) + bob;
+    const headR = isCrouch ? 24 : 28;
+    const eyesY = p.y + (isCrouch ? -45 : -60) + bob;
+    const rightUpperStartX = p.x + 25 + sway;
+    const rightUpperStartY = p.y - 10 + bob;
+    const rightUpperEndX = p.x + (isCrouch ? 45 : 55) + sway;
+    const rightUpperEndY = p.y + (isCrouch ? 20 : 5) + bob;
+    const rightLowerEndX = p.x + (isCrouch ? 65 : 85) + sway;
+    const rightLowerEndY = p.y + (isCrouch ? 30 : 10) + bob;
+    const leftUpperStartX = p.x - 25 + sway;
+    const leftUpperStartY = p.y - 10 + bob;
+    const leftUpperEndX = p.x - (isCrouch ? 45 : 55) + sway;
+    const leftUpperEndY = p.y + (isCrouch ? 20 : 5) + bob;
+    const leftLowerEndX = p.x - (isCrouch ? 65 : 85) + sway;
+    const leftLowerEndY = p.y + (isCrouch ? 30 : 10) + bob;
+    const gunX = p.x + (facing === 1 ? (isCrouch ? 65 : 85) : -(isCrouch ? 65 : 85)) + sway;
+    const gunY = p.y + (isCrouch ? 30 : 10) + bob;
 
-  // Right leg
-  ctx.beginPath();
-  ctx.moveTo(player.x + 10 + sway, legStartY);
-  ctx.lineTo(player.x + legEndX + sway, legEndY);
-  ctx.stroke();
+    // Legs
+    ctx.strokeStyle = colors.legStroke;
+    ctx.lineWidth = 8;
+    ctx.lineCap = "round";
 
-// ===== BODY =====
-  ctx.fillStyle = "#e94560";
-  ctx.beginPath();
-  ctx.roundRect(player.x - 25 + sway, bodyY, 50, bodyH, 8);
-  ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(p.x - 10 + sway, legStartY);
+    ctx.lineTo(p.x - legEndX + sway, legEndY);
+    ctx.stroke();
 
-  // ===== HEAD =====
-  ctx.fillStyle = "#ff6b6b";
-  ctx.beginPath();
-  ctx.arc(player.x + sway, headY, headR, 0, Math.PI * 2);
-  ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(p.x + 10 + sway, legStartY);
+    ctx.lineTo(p.x + legEndX + sway, legEndY);
+    ctx.stroke();
 
-  // Eyes
-  ctx.fillStyle = "#fff";
-  ctx.beginPath();
-  ctx.arc(player.x - 10 + sway, eyesY, 5, 0, Math.PI * 2);
-  ctx.arc(player.x + 10 + sway, eyesY, 5, 0, Math.PI * 2);
-  ctx.fill();
+    // Body
+    ctx.fillStyle = colors.body;
+    ctx.beginPath();
+    ctx.roundRect(p.x - 25 + sway, bodyY, 50, bodyH, 8);
+    ctx.fill();
 
-  ctx.fillStyle = "#000";
-  ctx.beginPath();
-  ctx.arc(player.x - 10 + sway, eyesY, 2.5, 0, Math.PI * 2);
-  ctx.arc(player.x + 10 + sway, eyesY, 2.5, 0, Math.PI * 2);
-  ctx.fill();
+    // Head
+    ctx.fillStyle = colors.head;
+    ctx.beginPath();
+    ctx.arc(p.x + sway, headY, headR, 0, Math.PI * 2);
+    ctx.fill();
 
-  // ===== ARMS =====
-  ctx.strokeStyle = "#e94560";
-  ctx.lineWidth = 7;
+    // Eyes
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(p.x - 10 + sway, eyesY, 5, 0, Math.PI * 2);
+    ctx.arc(p.x + 10 + sway, eyesY, 5, 0, Math.PI * 2);
+    ctx.fill();
 
-  const gunArm = facing === 1 ? "right" : "left";
-  const offHand = gunArm === "right" ? "left" : "right";
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.arc(p.x - 10 + sway, eyesY, 2.5, 0, Math.PI * 2);
+    ctx.arc(p.x + 10 + sway, eyesY, 2.5, 0, Math.PI * 2);
+    ctx.fill();
 
-  const gunUpperStartX = gunArm === "right" ? rightUpperStartX : leftUpperStartX;
-  const gunUpperStartY = gunArm === "right" ? rightUpperStartY : leftUpperStartY;
-  const gunUpperEndX = gunArm === "right" ? rightUpperEndX : leftUpperEndX;
-  const gunUpperEndY = gunArm === "right" ? rightUpperEndY : leftUpperEndY;
-  const gunLowerEndX = gunArm === "right" ? rightLowerEndX : leftLowerEndX;
-  const gunLowerEndY = gunArm === "right" ? rightLowerEndY : leftLowerEndY;
+    // Arms
+    ctx.strokeStyle = colors.body;
+    ctx.lineWidth = 7;
 
-  const offHandUpperStartX = offHand === "right" ? rightUpperStartX : leftUpperStartX;
-  const offHandUpperStartY = offHand === "right" ? rightUpperStartY : leftUpperStartY;
-  const offHandUpperEndX = offHand === "right" ? rightUpperEndX : leftUpperEndX;
-  const offHandUpperEndY = offHand === "right" ? rightUpperEndY : leftUpperEndY;
-  const offHandLowerEndX = offHand === "right" ? rightLowerEndX : leftLowerEndX;
-  const offHandLowerEndY = offHand === "right" ? rightLowerEndY : leftLowerEndY;
+    const gunArm = facing === 1 ? "right" : "left";
+    const offHand = gunArm === "right" ? "left" : "right";
 
-  // Gun arm
-  ctx.beginPath();
-  ctx.moveTo(gunUpperStartX, gunUpperStartY);
-  ctx.lineTo(gunUpperEndX, gunUpperEndY);
-  ctx.stroke();
+    const gunUpperStartX = gunArm === "right" ? rightUpperStartX : leftUpperStartX;
+    const gunUpperStartY = gunArm === "right" ? rightUpperStartY : leftUpperStartY;
+    const gunUpperEndX = gunArm === "right" ? rightUpperEndX : leftUpperEndX;
+    const gunUpperEndY = gunArm === "right" ? rightUpperEndY : leftUpperEndY;
+    const gunLowerEndX = gunArm === "right" ? rightLowerEndX : leftLowerEndX;
+    const gunLowerEndY = gunArm === "right" ? rightLowerEndY : leftLowerEndY;
 
-  ctx.beginPath();
-  ctx.moveTo(gunUpperEndX, gunUpperEndY);
-  ctx.lineTo(gunLowerEndX, gunLowerEndY);
-  ctx.stroke();
+    const offHandUpperStartX = offHand === "right" ? rightUpperStartX : leftUpperStartX;
+    const offHandUpperStartY = offHand === "right" ? rightUpperStartY : leftUpperStartY;
+    const offHandUpperEndX = offHand === "right" ? rightUpperEndX : leftUpperEndX;
+    const offHandUpperEndY = offHand === "right" ? rightUpperEndY : leftUpperEndY;
+    const offHandLowerEndX = offHand === "right" ? rightLowerEndX : leftLowerEndX;
+    const offHandLowerEndY = offHand === "right" ? rightLowerEndY : leftLowerEndY;
 
-  // Off hand
-  ctx.beginPath();
-  ctx.moveTo(offHandUpperStartX, offHandUpperStartY);
-  ctx.lineTo(offHandUpperEndX, offHandUpperEndY);
-  ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(gunUpperStartX, gunUpperStartY);
+    ctx.lineTo(gunUpperEndX, gunUpperEndY);
+    ctx.stroke();
 
-  ctx.beginPath();
-  ctx.moveTo(offHandUpperEndX, offHandUpperEndY);
-  ctx.lineTo(offHandLowerEndX, offHandLowerEndY);
-  ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(gunUpperEndX, gunUpperEndY);
+    ctx.lineTo(gunLowerEndX, gunLowerEndY);
+    ctx.stroke();
 
-  // ===== GUN =====
-  ctx.save();
-  ctx.translate(gunX, gunY);
-  ctx.scale(facing, 1);
+    ctx.beginPath();
+    ctx.moveTo(offHandUpperStartX, offHandUpperStartY);
+    ctx.lineTo(offHandUpperEndX, offHandUpperEndY);
+    ctx.stroke();
 
-  // Gun body
-  ctx.fillStyle = "#333";
-  ctx.fillRect(0, -6, 55, 14);
+    ctx.beginPath();
+    ctx.moveTo(offHandUpperEndX, offHandUpperEndY);
+    ctx.lineTo(offHandLowerEndX, offHandLowerEndY);
+    ctx.stroke();
 
-  // Barrel
-  ctx.fillStyle = "#222";
-  ctx.fillRect(50, -3, 25, 8);
+    // Gun
+    ctx.save();
+    ctx.translate(gunX, gunY);
+    ctx.scale(facing, 1);
 
-  // Grip
-  ctx.fillStyle = "#444";
-  ctx.fillRect(5, 6, 14, 18);
+    ctx.fillStyle = "#333";
+    ctx.fillRect(0, -6, 55, 14);
+    ctx.fillStyle = "#222";
+    ctx.fillRect(50, -3, 25, 8);
+    ctx.fillStyle = "#444";
+    ctx.fillRect(5, 6, 14, 18);
+    ctx.strokeStyle = "#555";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(18, 10, 6, 0, Math.PI);
+    ctx.stroke();
+    ctx.restore();
+  }
 
-  // Trigger guard
-  ctx.strokeStyle = "#555";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(18, 10, 6, 0, Math.PI);
-  ctx.stroke();
-  ctx.restore();
+  // Draw both players (player is red, player2 is blue)
+  drawPlayer(player, { legStroke: "#e94560", body: "#e94560", head: "#ff6b6b" });
+  drawPlayer(player2, { legStroke: "#2f6fe6", body: "#1e90ff", head: "#6fb0ff" });
 
   // Draw bullets
   ctx.fillStyle = "#FFD700";
@@ -317,10 +435,14 @@ function draw(state = player.state) {
   }
 
   // Draw reload indicator
-  if (isReloading) {
-    ctx.fillStyle = "#000";
-    ctx.font = "16px Arial";
-    ctx.fillText("Reloading...", 10, 30);
+  // Draw reload indicators per player
+  ctx.fillStyle = "#000";
+  ctx.font = "16px Arial";
+  if (isReloading1) {
+    ctx.fillText("Reloading Red...", 10, 30);
+  }
+  if (isReloading2) {
+    ctx.fillText("Reloading Blue...", 10, 50);
   }
   time++;
 }
