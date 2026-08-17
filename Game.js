@@ -83,9 +83,8 @@ window.addEventListener("keydown", e => {
     e.preventDefault();
   }
 
-  // Reload with Shift
-  // Reload with R
-  if (key === "r" && !isReloading1 && ammo1 < maxAmmo) {
+  // Reload with /
+  if (key === "/" && !isReloading1 && ammo1 < maxAmmo) {
     isReloading1 = true;
     reloadTimer1 = reloadTime;
   }

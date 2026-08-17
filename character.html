@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Adventure Game</title>
-   <style>
+  <title>Game</title>
+  <style>
     body {
       margin: 0;
       background: #1a1a2e;
@@ -16,32 +16,33 @@
       color: white;
     }
     canvas {
-      background: #87CEEB; /* sky blue */
+      background: #16213e;
       border: 3px solid #0f3460;
       border-radius: 8px;
     }
     #ui {
       position: absolute;
-      top: 15px;
-      left: 15px;
-      font-size: 16px;
-      background: rgba(0,0,0,0.7);
-      padding: 12px 16px;
+      top: 20px;
+      left: 20px;
+      font-size: 18px;
+      background: rgba(0,0,0,0.6);
+      padding: 10px 15px;
       border-radius: 8px;
-      line-height: 1.5;
     }
-
   </style>
 </head>
 <body>
   <div id="ui">
-    Coins: <span id="coins">0</span> | Ammo: <span id="ammo">12</span>/12<br>
-   ← → Walk | ↑ Jump | ↓ Crouch | Space = Shoot | Hold Left Click = Aim<br>
-    Shift = Reload
+    Red Ammo: <span id="ammo1">12</span> / 12
+    <button id="reload1">Reload Red (/)</button><br>
+    Blue Ammo: <span id="ammo2">12</span> / 12
+    <button id="reload2">Reload Blue (F)</button><br>
+    WASD = Move | Mouse = Aim | Left Click = Shoot | / = Reload Red | F = Reload Blue
   </div>
 
-  <canvas id="game" width="1000" height="600"></canvas>
+  <canvas id="game" width="900" height="600"></canvas>
 
+  <!-- This loads your game logic -->
   <script src="game.js"></script>
 </body>
 </html>
