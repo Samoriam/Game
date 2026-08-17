@@ -10,7 +10,7 @@ const player = {
   width: 40,
   height: 80,
   speed: 4,
-  jumpPower: -12,
+  jumpPower: -15,
   gravity: 0.5,
   vy: 0,
   onGround: true,
@@ -24,7 +24,7 @@ const player2 = {
   width: 40,
   height: 80,
   speed: 4,
-  jumpPower: -12,
+  jumpPower: -15,
   gravity: 0.5,
   vy: 0,
   onGround: true,
@@ -34,9 +34,9 @@ const player2 = {
 let time = 0;
 
 // ===== GUN & AMMO (per-player) =====
-let ammo1 = 12;
-let ammo2 = 12;
-const maxAmmo = 12;
+let ammo1 = 20;
+let ammo2 = 20;
+const maxAmmo = 20;
 let isReloading1 = false;
 let isReloading2 = false;
 let reloadTimer1 = 0;
