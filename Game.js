@@ -13,6 +13,7 @@ const player = {
   gravity: 0.5,
   vy: 0,
   onGround: true,
+  facing: 1, // 1 = right, -1 = left
   state: "standing" // standing | crouching | laying
 };
 let time = 0;
@@ -81,12 +82,11 @@ function shoot() {
   ammo--;
   ammoDisplay.textContent = ammo;
 
-  // Shoot to the right (you can change direction later)
-  const direction = keys["arrowleft"] ? -1 : 1;
+  const direction = player.facing;
 
   bullets.push({
-    x: player.x + (direction === 1 ? 150 : -30),
-    y: player.y - (player.state === "crouching" ? 25 : -10),
+    x: player.x + (direction === 1 ? 145 : -150),
+    y: player.y + (player.state === "crouching" ? -10 :  8),
     vx: direction * bulletSpeed,
     vy: 0,
     life: 70      
@@ -96,11 +96,13 @@ function shoot() {
 // ===== UPDATE =====
 function update() {
   // Horizontal movement
-  if (keys["arrowleft"]) {
+  if (keys["arrowleft"] && !keys["arrowright"]) {
     player.x -= player.speed;
+    player.facing = -1;
   }
-  if (keys["arrowright"]) {
+  if (keys["arrowright"] && !keys["arrowleft"]) {
     player.x += player.speed;
+    player.facing = 1;
   }
 
   // Jump / Stand up
@@ -167,6 +169,7 @@ function draw(state = player.state) {
   // sway and bob for visual effect (optional)
   const sway = Math.sin(time * 0.05) * 3;
   const bob = Math.sin(time * 0.08) * 2;
+  const facing = player.facing;
 
   // state-specific offsets (standing vs crouching)
   const isCrouch = state === "crouching";
@@ -190,7 +193,7 @@ function draw(state = player.state) {
   const leftUpperEndY = player.y + (isCrouch ? 20 : 5) + bob;
   const leftLowerEndX = player.x - (isCrouch ? 65 : 85) + sway;
   const leftLowerEndY = player.y + (isCrouch ? 30 : 10) + bob;
-  const gunX = player.x + (isCrouch ? 65 : 85) + sway;
+  const gunX = player.x + (facing === 1 ? (isCrouch ? 65 : 85) : -(isCrouch ? 65 : 85)) + sway;
   const gunY = player.y + (isCrouch ? 30 : 10) + bob;
 
   // Draw ground
@@ -239,60 +242,73 @@ function draw(state = player.state) {
   ctx.arc(player.x + 10 + sway, eyesY, 2.5, 0, Math.PI * 2);
   ctx.fill();
 
-  // ===== RIGHT ARM (holding gun) =====
+  // ===== ARMS =====
   ctx.strokeStyle = "#e94560";
   ctx.lineWidth = 7;
 
-  // Upper arm
+  const gunArm = facing === 1 ? "right" : "left";
+  const offHand = gunArm === "right" ? "left" : "right";
+
+  const gunUpperStartX = gunArm === "right" ? rightUpperStartX : leftUpperStartX;
+  const gunUpperStartY = gunArm === "right" ? rightUpperStartY : leftUpperStartY;
+  const gunUpperEndX = gunArm === "right" ? rightUpperEndX : leftUpperEndX;
+  const gunUpperEndY = gunArm === "right" ? rightUpperEndY : leftUpperEndY;
+  const gunLowerEndX = gunArm === "right" ? rightLowerEndX : leftLowerEndX;
+  const gunLowerEndY = gunArm === "right" ? rightLowerEndY : leftLowerEndY;
+
+  const offHandUpperStartX = offHand === "right" ? rightUpperStartX : leftUpperStartX;
+  const offHandUpperStartY = offHand === "right" ? rightUpperStartY : leftUpperStartY;
+  const offHandUpperEndX = offHand === "right" ? rightUpperEndX : leftUpperEndX;
+  const offHandUpperEndY = offHand === "right" ? rightUpperEndY : leftUpperEndY;
+  const offHandLowerEndX = offHand === "right" ? rightLowerEndX : leftLowerEndX;
+  const offHandLowerEndY = offHand === "right" ? rightLowerEndY : leftLowerEndY;
+
+  // Gun arm
   ctx.beginPath();
-  ctx.moveTo(rightUpperStartX, rightUpperStartY);
-  ctx.lineTo(rightUpperEndX, rightUpperEndY);
+  ctx.moveTo(gunUpperStartX, gunUpperStartY);
+  ctx.lineTo(gunUpperEndX, gunUpperEndY);
   ctx.stroke();
 
-  // Lower arm + hand
   ctx.beginPath();
-  ctx.moveTo(rightUpperEndX, rightUpperEndY);
-  ctx.lineTo(rightLowerEndX, rightLowerEndY);
+  ctx.moveTo(gunUpperEndX, gunUpperEndY);
+  ctx.lineTo(gunLowerEndX, gunLowerEndY);
   ctx.stroke();
 
-  // ===== LEFT ARM =====
-  ctx.strokeStyle = "#e94560";
-  ctx.lineWidth = 7;
-
-  // Upper arm
+  // Off hand
   ctx.beginPath();
-  ctx.moveTo(leftUpperStartX, leftUpperStartY);
-  ctx.lineTo(leftUpperEndX, leftUpperEndY);
+  ctx.moveTo(offHandUpperStartX, offHandUpperStartY);
+  ctx.lineTo(offHandUpperEndX, offHandUpperEndY);
   ctx.stroke();
 
-  // Lower arm + hand
   ctx.beginPath();
-  ctx.moveTo(leftUpperEndX, leftUpperEndY);
-  ctx.lineTo(leftLowerEndX, leftLowerEndY);
+  ctx.moveTo(offHandUpperEndX, offHandUpperEndY);
+  ctx.lineTo(offHandLowerEndX, offHandLowerEndY);
   ctx.stroke();
 
-   // ===== GUN =====
-  // Gun position depends on state
-  // (gunX/gunY were computed above)
+  // ===== GUN =====
+  ctx.save();
+  ctx.translate(gunX, gunY);
+  ctx.scale(facing, 1);
 
   // Gun body
   ctx.fillStyle = "#333";
-  ctx.fillRect(gunX, gunY - 6, 55, 14);
+  ctx.fillRect(0, -6, 55, 14);
 
   // Barrel
   ctx.fillStyle = "#222";
-  ctx.fillRect(gunX + 50, gunY - 3, 25, 8);
+  ctx.fillRect(50, -3, 25, 8);
 
   // Grip
   ctx.fillStyle = "#444";
-  ctx.fillRect(gunX + 5, gunY + 6, 14, 18);
+  ctx.fillRect(5, 6, 14, 18);
 
   // Trigger guard
   ctx.strokeStyle = "#555";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(gunX + 18, gunY + 10, 6, 0, Math.PI);
+  ctx.arc(18, 10, 6, 0, Math.PI);
   ctx.stroke();
+  ctx.restore();
 
   // Draw bullets
   ctx.fillStyle = "#FFD700";
