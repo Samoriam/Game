@@ -47,6 +47,71 @@ const reloadTime = 90;
 const bullets = [];
 const bulletSpeed = 14;
 
+// ===== BIRDS =====
+const birds = [];
+const maxBirds = 7;
+let birdSpawnTimer = 0;
+
+function spawnBird() {
+  const fromLeft = Math.random() < 0.5;
+  const x = fromLeft ? -40 : canvas.width + 40;
+  const y = 50 + Math.random() * 180;
+  const speed = 1.5 + Math.random() * 2.5;
+
+  birds.push({
+    x,
+    y,
+    width: 28,
+    height: 16,
+    vx: (fromLeft ? 1 : -1) * speed,
+    phase: Math.random() * Math.PI * 2,
+    alive: true
+  });
+}
+
+function drawBird(bird) {
+  if (!bird.alive) return;
+
+  const direction = bird.vx >= 0 ? 1 : -1;
+  const wingLift = Math.sin(time * 0.18 + bird.phase) * 8;
+
+  ctx.save();
+  ctx.translate(bird.x, bird.y);
+  ctx.scale(direction, 1);
+
+  ctx.fillStyle = "#2d2d2d";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 18, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#171717";
+  ctx.beginPath();
+  ctx.moveTo(-4, -1);
+  ctx.lineTo(-16, -10 - wingLift);
+  ctx.lineTo(-10, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(-4, -1);
+  ctx.lineTo(-16, 10 + wingLift);
+  ctx.lineTo(-10, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(7, -2, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  ctx.arc(7, -2, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
 // Setup reload button handlers (if elements exist)
 const reloadBtn1 = document.getElementById("reload1");
 const reloadBtn2 = document.getElementById("reload2");
@@ -259,6 +324,49 @@ function update() {
 
     if (bullets[i].life <= 0 || bullets[i].x < 0 || bullets[i].x > canvas.width) {
       bullets.splice(i, 1);
+      continue;
+    }
+
+    for (let j = birds.length - 1; j >= 0; j--) {
+      const bird = birds[j];
+      if (!bird.alive) continue;
+
+      const hitBird =
+        bullets[i].x > bird.x - bird.width / 2 &&
+        bullets[i].x < bird.x + bird.width / 2 &&
+        bullets[i].y > bird.y - bird.height / 2 &&
+        bullets[i].y < bird.y + bird.height / 2;
+
+      if (hitBird) {
+        bird.alive = false;
+        bullets.splice(i, 1);
+        break;
+      }
+    }
+  }
+
+  // Bird population and flight
+  if (birdSpawnTimer > 0) {
+    birdSpawnTimer--;
+  }
+
+  if (birds.length < maxBirds && birdSpawnTimer <= 0) {
+    spawnBird();
+    birdSpawnTimer = 60 + Math.random() * 90;
+  }
+
+  for (let i = birds.length - 1; i >= 0; i--) {
+    const bird = birds[i];
+    if (!bird.alive) {
+      birds.splice(i, 1);
+      continue;
+    }
+
+    bird.x += bird.vx;
+    bird.y += Math.sin((time * 0.08) + bird.phase) * 0.7;
+
+    if (bird.x < -60 || bird.x > canvas.width + 60) {
+      birds.splice(i, 1);
     }
   }
 
@@ -421,6 +529,11 @@ function draw() {
     ctx.arc(18, 10, 6, 0, Math.PI);
     ctx.stroke();
     ctx.restore();
+  }
+
+  // Draw birds in the sky
+  for (const bird of birds) {
+    drawBird(bird);
   }
 
   // Draw both players (player is red, player2 is blue)
