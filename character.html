@@ -31,7 +31,7 @@
       left: 20px;
       right: 20px;
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start;
       align-items: flex-start;
       pointer-events: none;
       z-index: 2;
@@ -53,14 +53,6 @@
       font-weight: bold;
     }
 
-    #blue-panel {
-      text-align: left;
-    }
-
-    #red-panel {
-      text-align: right;
-    }
-
     button {
       display: block;
       margin-top: 6px;
@@ -68,28 +60,108 @@
       font-size: 15px;
       cursor: pointer;
     }
+
+    /* ===== CHARACTER SELECT ===== */
+    #characterSelect {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 30px;
+      background: #1a1a2e;
+      z-index: 10;
+    }
+
+    #characterSelect h1 {
+      margin: 0;
+      font-size: 28px;
+    }
+
+    .choices {
+      display: flex;
+      gap: 24px;
+    }
+
+    .choice {
+      background: rgba(255, 255, 255, 0.05);
+      border: 2px solid transparent;
+      border-radius: 10px;
+      padding: 16px;
+      width: 140px;
+      cursor: pointer;
+      color: white;
+      font-family: inherit;
+      font-size: 16px;
+      text-align: center;
+    }
+
+    .choice:hover {
+      border-color: white;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .portrait {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      margin: 0 auto 10px;
+    }
+
+    .portrait.red { background: #ff6b6b; }
+    .portrait.blue { background: #6fb0ff; }
+
+    #hud.hidden,
+    canvas.hidden {
+      display: none;
+    }
   </style>
 </head>
 <body>
-  <div id="hud">
-    <div id="blue-panel" class="panel">
-      <strong>Blue</strong><br>
-      Ammo: <span id="ammo2">20</span> / 20
-      <button id="reload2">Reload Blue (F)</button><br>
-      WASD = Move | Space = Jump | S = Crouch/Lay | F = Reload
-    </div>
-
-    <div id="red-panel" class="panel">
-      <strong>Red</strong><br>
-      Ammo: <span id="ammo1">20</span> / 20
-      <button id="reload1">Reload Red (/)</button><br>
-      Arrows = Move | Up = Jump | Down = Crouch/Lay | / = Reload
+  <div id="characterSelect">
+    <h1>Choose Your Character</h1>
+    <div class="choices">
+      <button class="choice" id="pickRed">
+        <div class="portrait red"></div>
+        Red
+      </button>
+      <button class="choice" id="pickBlue">
+        <div class="portrait blue"></div>
+        Blue
+      </button>
     </div>
   </div>
 
-  <canvas id="game" width="900" height="600"></canvas>
+  <div id="hud" class="hidden">
+    <div class="panel">
+      <strong>Player</strong><br>
+      Ammo: <span id="ammo">20</span> / 20<br>
+      Lives: <span id="lives">3</span>
+      <button id="reload">Reload (Shift)</button><br>
+      Arrows = Move | Up = Jump | Down = Crouch/Lay | Space = Shoot | Shift = Reload<br>
+      Watch for red exploding birds - dodge the bomb when shot!
+    </div>
+  </div>
+
+  <canvas id="game" width="900" height="600" class="hidden"></canvas>
 
   <!-- This loads your game logic -->
   <script src="Game.js"></script>
+  <script>
+    const characterSelect = document.getElementById("characterSelect");
+    const hud = document.getElementById("hud");
+    const gameCanvas = document.getElementById("game");
+
+    function choose(character) {
+      characterSelect.remove();
+      hud.classList.remove("hidden");
+      gameCanvas.classList.remove("hidden");
+      startGame(character);
+    }
+
+    document.getElementById("pickRed").addEventListener("click", () => choose("red"));
+    document.getElementById("pickBlue").addEventListener("click", () => choose("blue"));
+  </script>
 </body>
 </html>
