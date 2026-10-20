@@ -288,12 +288,14 @@ if (isTouchDevice) {
 }
 
 // Virtual joystick: drag to move (left/right), jump (up) or crouch (down)
+// Uses classic Touch Events (not Pointer Events) for reliable drag tracking
+// across mobile browsers, iOS Safari in particular.
 const joystickBase = document.getElementById("joystickBase");
 const joystickThumb = document.getElementById("joystickThumb");
 if (joystickBase && joystickThumb) {
   const joystickRadius = 45; // max thumb travel in px
   const deadzone = 15; // px before a direction registers
-  let joystickPointerId = null;
+  let joystickTouchId = null;
   let joystickCenterX = 0;
   let joystickCenterY = 0;
   let joystickDown = false;
@@ -306,23 +308,9 @@ if (joystickBase && joystickThumb) {
     joystickDown = false;
   }
 
-  joystickBase.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    if (!gameStarted || gameOver) return;
-
-    const rect = joystickBase.getBoundingClientRect();
-    joystickCenterX = rect.left + rect.width / 2;
-    joystickCenterY = rect.top + rect.height / 2;
-    joystickPointerId = e.pointerId;
-    joystickBase.setPointerCapture(e.pointerId);
-  });
-
-  joystickBase.addEventListener("pointermove", (e) => {
-    if (e.pointerId !== joystickPointerId) return;
-    e.preventDefault();
-
-    let dx = e.clientX - joystickCenterX;
-    let dy = e.clientY - joystickCenterY;
+  function updateJoystick(clientX, clientY) {
+    let dx = clientX - joystickCenterX;
+    let dy = clientY - joystickCenterY;
     const dist = Math.hypot(dx, dy);
     if (dist > joystickRadius) {
       dx = (dx / dist) * joystickRadius;
@@ -338,33 +326,67 @@ if (joystickBase && joystickThumb) {
     if (isDown && !joystickDown) registerDownPress();
     joystickDown = isDown;
     keys["arrowdown"] = isDown;
-  });
+  }
 
-  const endJoystick = (e) => {
-    if (e.pointerId !== joystickPointerId) return;
-    joystickPointerId = null;
+  function findTouch(touchList) {
+    for (let i = 0; i < touchList.length; i++) {
+      if (touchList[i].identifier === joystickTouchId) return touchList[i];
+    }
+    return null;
+  }
+
+  joystickBase.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    if (!gameStarted || gameOver || joystickTouchId !== null) return;
+
+    const touch = e.changedTouches[0];
+    const rect = joystickBase.getBoundingClientRect();
+    joystickCenterX = rect.left + rect.width / 2;
+    joystickCenterY = rect.top + rect.height / 2;
+    joystickTouchId = touch.identifier;
+    updateJoystick(touch.clientX, touch.clientY);
+  }, { passive: false });
+
+  joystickBase.addEventListener("touchmove", (e) => {
+    if (joystickTouchId === null) return;
+    const touch = findTouch(e.changedTouches);
+    if (!touch) return;
+    e.preventDefault();
+    updateJoystick(touch.clientX, touch.clientY);
+  }, { passive: false });
+
+  const endJoystickTouch = (e) => {
+    if (joystickTouchId === null) return;
+    const touch = findTouch(e.changedTouches);
+    if (!touch) return;
+    e.preventDefault();
+    joystickTouchId = null;
     joystickThumb.style.transform = "translate(0, 0)";
     resetJoystickKeys();
   };
 
-  joystickBase.addEventListener("pointerup", endJoystick);
-  joystickBase.addEventListener("pointercancel", endJoystick);
+  joystickBase.addEventListener("touchend", endJoystickTouch, { passive: false });
+  joystickBase.addEventListener("touchcancel", endJoystickTouch, { passive: false });
 }
 
 const touchFireBtn = document.getElementById("touchFire");
 if (touchFireBtn) {
   let fireInterval = null;
+  let fireTouchId = null;
 
-  const stopFire = (e) => {
-    e.preventDefault();
+  const stopFire = () => {
     if (fireInterval) {
       clearInterval(fireInterval);
       fireInterval = null;
     }
+    fireTouchId = null;
   };
 
-  touchFireBtn.addEventListener("pointerdown", (e) => {
+  touchFireBtn.addEventListener("touchstart", (e) => {
     e.preventDefault();
+    if (fireTouchId !== null) return;
+    fireTouchId = e.changedTouches[0].identifier;
+
     if (!gameStarted) return;
     if (gameOver) {
       resetGame();
@@ -372,13 +394,19 @@ if (touchFireBtn) {
     }
     shoot();
     fireInterval = setInterval(shoot, 120);
-  });
-  touchFireBtn.addEventListener("pointerup", stopFire);
-  touchFireBtn.addEventListener("pointercancel", stopFire);
-  touchFireBtn.addEventListener("pointerleave", stopFire);
+  }, { passive: false });
+
+  touchFireBtn.addEventListener("touchend", (e) => {
+    e.preventDefault();
+    stopFire();
+  }, { passive: false });
+  touchFireBtn.addEventListener("touchcancel", (e) => {
+    e.preventDefault();
+    stopFire();
+  }, { passive: false });
 }
 
-canvas.addEventListener("pointerdown", () => {
+canvas.addEventListener("click", () => {
   if (gameStarted && gameOver) resetGame();
 });
 
