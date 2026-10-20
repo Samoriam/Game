@@ -1,7 +1,8 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const ammoDisplay = document.getElementById("ammo");
-const livesDisplay = document.getElementById("lives");
+const healthDisplay = document.getElementById("health");
+const scoreDisplay = document.getElementById("score");
 
 // ===== CHARACTER COLORS =====
 const characterColors = {
@@ -28,9 +29,20 @@ const player = {
 let time = 0;
 
 // ===== HEALTH =====
-const maxLives = 3;
-let lives = maxLives;
+const maxHealth = 100;
+let health = maxHealth;
+const redBirdDamage = 10; // % health lost per red bird attack
+const redBirdChaseSpeed = 6;
+const redBirdAttackRange = 40;
+const redBirdAttackCooldown = 60; // frames of player invincibility between attacks
+const redBirdMaxHp = 3; // shots needed to kill a red bird
 let gameOver = false;
+
+// ===== SCORE =====
+let score = 0;
+const birdPoints = 100;
+const redBirdPoints = 200;
+const redBirdKillBonus = 100;
 
 // ===== GUN & AMMO =====
 let ammo = 20;
@@ -43,9 +55,7 @@ const reloadTime = 90;
 const bullets = [];
 const bulletSpeed = 14;
 
-// ===== BOMBS & EXPLOSIONS =====
-const bombs = [];
-const bombGravity = 0.35;
+// ===== EXPLOSIONS =====
 const explosions = [];
 
 // ===== AIMING =====
@@ -136,6 +146,7 @@ function spawnBird() {
   const x = fromLeft ? -40 : canvas.width + 40;
   const y = 50 + Math.random() * 180;
   const speed = 1.5 + Math.random() * 2.5;
+  const isExploding = Math.random() < 0.2;
 
   birds.push({
     x,
@@ -145,8 +156,10 @@ function spawnBird() {
     vx: (fromLeft ? 1 : -1) * speed,
     phase: Math.random() * Math.PI * 2,
     alive: true,
-    isExploding: Math.random() < 0.2,
+    isExploding,
     dying: false,
+    attacking: false,
+    hp: isExploding ? redBirdMaxHp : 1,
     fallVy: 0,
     rotation: 0
   });
@@ -196,6 +209,19 @@ function drawBird(bird) {
   ctx.fill();
 
   ctx.restore();
+
+  if (bird.isExploding && bird.attacking && !bird.dying) {
+    const barWidth = 30;
+    const barHeight = 5;
+    const barX = bird.x - barWidth / 2;
+    const barY = bird.y - 22;
+    const hpFraction = Math.max(bird.hp, 0) / redBirdMaxHp;
+
+    ctx.fillStyle = "#333";
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+    ctx.fillStyle = "#ff3b3b";
+    ctx.fillRect(barX, barY, barWidth * hpFraction, barHeight);
+  }
 }
 
 // Setup reload button handler (if element exists)
@@ -354,12 +380,21 @@ function update() {
         bullets[i].y < bird.y + bird.height / 2;
 
       if (hitBird) {
-        bird.dying = true;
-        bird.fallVy = -3;
+        bird.hp--;
 
-        if (bird.isExploding) {
-          bombs.push({ x: bird.x, y: bird.y, vy: 0 });
+        if (bird.isExploding && !bird.attacking) {
+          // First hit enrages the red bird instead of killing it
+          bird.attacking = true;
+          score += redBirdPoints;
         }
+
+        if (bird.hp <= 0) {
+          bird.dying = true;
+          bird.attacking = false;
+          bird.fallVy = -3;
+          score += bird.isExploding ? redBirdKillBonus : birdPoints;
+        }
+        scoreDisplay.textContent = score;
 
         bullets.splice(i, 1);
         break;
@@ -392,44 +427,36 @@ function update() {
       continue;
     }
 
+    if (bird.attacking) {
+      const targetX = player.x + player.width / 2;
+      const targetY = player.y;
+      const dx = targetX - bird.x;
+      const dy = targetY - bird.y;
+      const dist = Math.hypot(dx, dy) || 1;
+
+      bird.vx = (dx / dist) * redBirdChaseSpeed;
+      bird.x += bird.vx;
+      bird.y += (dy / dist) * redBirdChaseSpeed;
+
+      if (dist < redBirdAttackRange && player.invincible <= 0) {
+        health -= redBirdDamage;
+        if (health < 0) health = 0;
+        healthDisplay.textContent = health;
+        player.invincible = redBirdAttackCooldown;
+        explosions.push({ x: player.x, y: player.y - 30, radius: 6, life: 20 });
+
+        if (health <= 0) {
+          gameOver = true;
+        }
+      }
+      continue;
+    }
+
     bird.x += bird.vx;
     bird.y += Math.sin((time * 0.08) + bird.phase) * 0.7;
 
     if (bird.x < -60 || bird.x > canvas.width + 60) {
       birds.splice(i, 1);
-    }
-  }
-
-  // Update bombs dropped by exploding birds
-  for (let i = bombs.length - 1; i >= 0; i--) {
-    const bomb = bombs[i];
-    bomb.vy += bombGravity;
-    bomb.y += bomb.vy;
-
-    const hitPlayer =
-      player.invincible <= 0 &&
-      bomb.x > player.x - 35 &&
-      bomb.x < player.x + 35 &&
-      bomb.y > player.y - 90 &&
-      bomb.y < player.y + 110;
-
-    if (hitPlayer) {
-      explosions.push({ x: bomb.x, y: bomb.y, radius: 6, life: 20 });
-      bombs.splice(i, 1);
-
-      lives--;
-      livesDisplay.textContent = lives;
-      player.invincible = 90;
-
-      if (lives <= 0) {
-        gameOver = true;
-      }
-      continue;
-    }
-
-    if (bomb.y > 500) {
-      explosions.push({ x: bomb.x, y: 500, radius: 6, life: 20 });
-      bombs.splice(i, 1);
     }
   }
 
@@ -610,21 +637,7 @@ function draw() {
     ctx.fillRect(bullet.x - 3, bullet.y - 3, 6, 6);
   }
 
-  // Draw bombs dropped by exploding birds
-  ctx.fillStyle = "#111";
-  for (const bomb of bombs) {
-    ctx.beginPath();
-    ctx.arc(bomb.x, bomb.y, 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#ff8c00";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(bomb.x, bomb.y - 8);
-    ctx.lineTo(bomb.x + 4, bomb.y - 14);
-    ctx.stroke();
-  }
-
-  // Draw explosion bursts
+  // Draw explosion bursts (red bird attack impacts)
   for (const explosion of explosions) {
     const alpha = Math.max(explosion.life / 20, 0);
     ctx.fillStyle = `rgba(255, 140, 0, ${alpha})`;
@@ -654,7 +667,8 @@ function draw() {
     ctx.font = "48px Arial";
     ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 10);
     ctx.font = "20px Arial";
-    ctx.fillText("Press R to Restart", canvas.width / 2, canvas.height / 2 + 30);
+    ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 20);
+    ctx.fillText("Press R to Restart", canvas.width / 2, canvas.height / 2 + 50);
     ctx.textAlign = "left";
   }
 
@@ -677,8 +691,10 @@ function startGame(character) {
 
 // Reset all game state after a Game Over
 function resetGame() {
-  lives = maxLives;
-  livesDisplay.textContent = lives;
+  health = maxHealth;
+  healthDisplay.textContent = health;
+  score = 0;
+  scoreDisplay.textContent = score;
   ammo = maxAmmo;
   ammoDisplay.textContent = ammo;
   isReloading = false;
@@ -694,6 +710,5 @@ function resetGame() {
 
   bullets.length = 0;
   birds.length = 0;
-  bombs.length = 0;
   explosions.length = 0;
 }
