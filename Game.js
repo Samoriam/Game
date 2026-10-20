@@ -224,17 +224,6 @@ function drawBird(bird) {
   }
 }
 
-// Setup reload button handler (if element exists)
-const reloadBtn = document.getElementById("reload");
-if (reloadBtn) {
-  reloadBtn.addEventListener("click", () => {
-    if (!isReloading && ammo < maxAmmo) {
-      isReloading = true;
-      reloadTimer = reloadTime;
-    }
-  });
-}
-
 // ===== KEYS & DOUBLE TAP =====
 const keys = {};
 let lastDownTime = 0;
@@ -298,31 +287,69 @@ if (isTouchDevice) {
   document.body.classList.add("touch-device");
 }
 
-function bindHoldButton(id, key, onPress) {
-  const btn = document.getElementById(id);
-  if (!btn) return;
+// Virtual joystick: drag to move (left/right), jump (up) or crouch (down)
+const joystickBase = document.getElementById("joystickBase");
+const joystickThumb = document.getElementById("joystickThumb");
+if (joystickBase && joystickThumb) {
+  const joystickRadius = 45; // max thumb travel in px
+  const deadzone = 15; // px before a direction registers
+  let joystickPointerId = null;
+  let joystickCenterX = 0;
+  let joystickCenterY = 0;
+  let joystickDown = false;
 
-  const press = (e) => {
+  function resetJoystickKeys() {
+    keys["arrowleft"] = false;
+    keys["arrowright"] = false;
+    keys["arrowup"] = false;
+    keys["arrowdown"] = false;
+    joystickDown = false;
+  }
+
+  joystickBase.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     if (!gameStarted || gameOver) return;
-    if (onPress) onPress();
-    keys[key] = true;
-  };
-  const release = (e) => {
+
+    const rect = joystickBase.getBoundingClientRect();
+    joystickCenterX = rect.left + rect.width / 2;
+    joystickCenterY = rect.top + rect.height / 2;
+    joystickPointerId = e.pointerId;
+    joystickBase.setPointerCapture(e.pointerId);
+  });
+
+  joystickBase.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== joystickPointerId) return;
     e.preventDefault();
-    keys[key] = false;
+
+    let dx = e.clientX - joystickCenterX;
+    let dy = e.clientY - joystickCenterY;
+    const dist = Math.hypot(dx, dy);
+    if (dist > joystickRadius) {
+      dx = (dx / dist) * joystickRadius;
+      dy = (dy / dist) * joystickRadius;
+    }
+    joystickThumb.style.transform = `translate(${dx}px, ${dy}px)`;
+
+    keys["arrowleft"] = dx < -deadzone;
+    keys["arrowright"] = dx > deadzone;
+    keys["arrowup"] = dy < -deadzone;
+
+    const isDown = dy > deadzone;
+    if (isDown && !joystickDown) registerDownPress();
+    joystickDown = isDown;
+    keys["arrowdown"] = isDown;
+  });
+
+  const endJoystick = (e) => {
+    if (e.pointerId !== joystickPointerId) return;
+    joystickPointerId = null;
+    joystickThumb.style.transform = "translate(0, 0)";
+    resetJoystickKeys();
   };
 
-  btn.addEventListener("pointerdown", press);
-  btn.addEventListener("pointerup", release);
-  btn.addEventListener("pointercancel", release);
-  btn.addEventListener("pointerleave", release);
+  joystickBase.addEventListener("pointerup", endJoystick);
+  joystickBase.addEventListener("pointercancel", endJoystick);
 }
-
-bindHoldButton("touchLeft", "arrowleft");
-bindHoldButton("touchRight", "arrowright");
-bindHoldButton("touchJump", "arrowup");
-bindHoldButton("touchCrouch", "arrowdown", registerDownPress);
 
 const touchFireBtn = document.getElementById("touchFire");
 if (touchFireBtn) {
@@ -373,6 +400,12 @@ function shoot() {
     vy: Math.sin(angle) * bulletSpeed,
     life: 70
   });
+
+  // Auto-reload once the magazine is empty
+  if (ammo <= 0 && !isReloading) {
+    isReloading = true;
+    reloadTimer = reloadTime;
+  }
 }
 
 // ===== UPDATE =====

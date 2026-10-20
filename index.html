@@ -12,74 +12,13 @@
     body {
       margin: 0;
       background: #1a1a2e;
-      display: flex;
-      justify-content: center;
-      align-items: center;
       height: 100vh;
+      height: 100dvh;
       overflow: hidden;
       font-family: Arial, sans-serif;
       color: white;
       position: relative;
       touch-action: none;
-    }
-
-    #canvasWrapper {
-      position: relative;
-      width: min(100vw, 150vh);
-      max-width: 900px;
-      aspect-ratio: 3 / 2;
-    }
-
-    #canvasWrapper.hidden {
-      display: none;
-    }
-
-    canvas {
-      background: #16213e;
-      border: 3px solid #0f3460;
-      border-radius: 8px;
-      position: relative;
-      z-index: 1;
-      width: 100%;
-      height: 100%;
-      display: block;
-      touch-action: none;
-    }
-
-    #hud {
-      position: absolute;
-      top: 20px;
-      left: 20px;
-      right: 20px;
-      display: flex;
-      justify-content: flex-start;
-      align-items: flex-start;
-      pointer-events: none;
-      z-index: 2;
-    }
-
-    .panel {
-      pointer-events: auto;
-      background: rgba(0, 0, 0, 0.6);
-      padding: 10px 15px;
-      border-radius: 8px;
-      font-size: 18px;
-      line-height: 1.6;
-      min-width: 240px;
-      max-width: 360px;
-      box-sizing: border-box;
-    }
-
-    .panel strong {
-      font-weight: bold;
-    }
-
-    button {
-      display: block;
-      margin-top: 6px;
-      width: 100%;
-      font-size: 15px;
-      cursor: pointer;
     }
 
     /* ===== CHARACTER SELECT ===== */
@@ -90,14 +29,18 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      gap: 30px;
+      gap: 24px;
       background: #1a1a2e;
       z-index: 10;
+      padding: 20px;
+      box-sizing: border-box;
+      overflow-y: auto;
     }
 
     #characterSelect h1 {
       margin: 0;
       font-size: 28px;
+      text-align: center;
     }
 
     .choices {
@@ -133,68 +76,70 @@
     .portrait.red { background: #ff6b6b; }
     .portrait.blue { background: #6fb0ff; }
 
-    #hud.hidden {
-      display: none;
+    .rules {
+      max-width: 480px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: rgba(255, 255, 255, 0.85);
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 14px 18px;
+      box-sizing: border-box;
     }
 
-    /* ===== TOUCH CONTROLS ===== */
-    #touchControls {
-      display: none;
+    .rules p {
+      margin: 0 0 8px;
+    }
+
+    .rules p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* ===== GAMEPLAY LAYOUT ===== */
+    #gameArea {
       position: absolute;
       inset: 0;
-      z-index: 3;
-      pointer-events: none;
-    }
-
-    body.touch-device #touchControls:not(.hidden) {
-      display: block;
-    }
-
-    .touchGroup {
-      position: absolute;
-      bottom: 20px;
       display: flex;
-      gap: 12px;
-      pointer-events: auto;
+      flex-direction: column;
     }
 
-    #touchControls .dpad {
-      left: 20px;
+    #gameArea.hidden {
+      display: none;
     }
 
-    #touchControls .actions {
-      right: 20px;
-      align-items: flex-end;
-    }
-
-    .touchBtn {
-      margin: 0;
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
-      border: 2px solid rgba(255, 255, 255, 0.4);
-      background: rgba(0, 0, 0, 0.45);
-      color: white;
-      font-size: 22px;
-      font-family: inherit;
+    #statBar {
+      flex: 0 0 auto;
       display: flex;
-      align-items: center;
       justify-content: center;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: none;
-      outline: none;
-      padding: 0;
+      gap: 24px;
+      padding: 8px 10px;
+      background: rgba(0, 0, 0, 0.55);
+      font-size: 15px;
+      z-index: 2;
     }
 
-    .touchBtn.fire {
-      width: 76px;
-      height: 76px;
-      font-size: 14px;
-      font-weight: bold;
-      background: rgba(233, 69, 96, 0.55);
-      border-color: rgba(255, 255, 255, 0.6);
+    #canvasWrapper {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    canvas {
+      box-sizing: border-box;
+      background: #16213e;
+      border: 3px solid #0f3460;
+      border-radius: 8px;
+      max-width: 100%;
+      max-height: 100%;
+      aspect-ratio: 3 / 2;
+      width: auto;
+      height: auto;
+      display: block;
+      touch-action: none;
     }
 
     #rotateHint {
@@ -216,6 +161,71 @@
         display: flex;
       }
     }
+
+    /* ===== TOUCH CONTROLS ===== */
+    #touchControls {
+      display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    body.touch-device #touchControls {
+      display: block;
+    }
+
+    #joystickBase {
+      position: absolute;
+      left: 24px;
+      bottom: 24px;
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      pointer-events: auto;
+      touch-action: none;
+    }
+
+    #joystickThumb {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 50px;
+      height: 50px;
+      margin-left: -25px;
+      margin-top: -25px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.35);
+      pointer-events: none;
+    }
+
+    #touchFire {
+      position: absolute;
+      right: 28px;
+      bottom: 28px;
+      width: 84px;
+      height: 84px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.6);
+      background: rgba(233, 69, 96, 0.55);
+      color: white;
+      font-size: 15px;
+      font-weight: bold;
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: auto;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      outline: none;
+      padding: 0;
+      margin: 0;
+    }
   </style>
 </head>
 <body>
@@ -231,36 +241,31 @@
         Blue
       </button>
     </div>
-  </div>
-
-  <div id="hud" class="hidden">
-    <div class="panel">
-      <strong>Player</strong><br>
-      Ammo: <span id="ammo">20</span> / 20<br>
-      Health: <span id="health">100</span>%<br>
-      Score: <span id="score">0</span>
-      <button id="reload">Reload (Shift)</button><br>
-      Arrows = Move | Up = Jump | Down = Crouch/Lay | Space = Shoot | Shift = Reload<br>
-      On mobile: use the on-screen buttons to move, jump, crouch and fire<br>
-      Watch for red birds - shooting one enrages it and it attacks! Shoot it again to finish it off. (-10% health per hit)
+    <div class="rules">
+      <p><strong>Desktop:</strong> Arrows = Move | Up = Jump | Down = Crouch (double-tap to lay) | Space = Shoot | Shift = Reload</p>
+      <p><strong>Mobile:</strong> Drag the joystick (bottom-left) to move, jump or crouch. Tap FIRE (bottom-right) to shoot. Ammo reloads automatically when empty.</p>
+      <p>Watch for red birds - shooting one enrages it and it attacks! Shoot it again to finish it off. Each hit costs 10% health.</p>
     </div>
   </div>
 
-  <div id="rotateHint">Rotate your device for the best view</div>
-
-  <div id="canvasWrapper" class="hidden">
-    <canvas id="game" width="900" height="600"></canvas>
-  </div>
-
-  <div id="touchControls" class="hidden">
-    <div class="touchGroup dpad">
-      <button class="touchBtn" id="touchLeft" type="button">&#9664;</button>
-      <button class="touchBtn" id="touchRight" type="button">&#9654;</button>
+  <div id="gameArea" class="hidden">
+    <div id="statBar">
+      <span>Ammo: <span id="ammo">20</span>/20</span>
+      <span>Health: <span id="health">100</span>%</span>
+      <span>Score: <span id="score">0</span></span>
     </div>
-    <div class="touchGroup actions">
-      <button class="touchBtn" id="touchCrouch" type="button">&#9660;</button>
-      <button class="touchBtn" id="touchJump" type="button">&#9650;</button>
-      <button class="touchBtn fire" id="touchFire" type="button">FIRE</button>
+
+    <div id="canvasWrapper">
+      <canvas id="game" width="900" height="600"></canvas>
+
+      <div id="rotateHint">Rotate your device for the best view</div>
+
+      <div id="touchControls">
+        <div id="joystickBase">
+          <div id="joystickThumb"></div>
+        </div>
+        <button id="touchFire" type="button">FIRE</button>
+      </div>
     </div>
   </div>
 
@@ -268,15 +273,11 @@
   <script src="Game.js"></script>
   <script>
     const characterSelect = document.getElementById("characterSelect");
-    const hud = document.getElementById("hud");
-    const canvasWrapper = document.getElementById("canvasWrapper");
-    const touchControls = document.getElementById("touchControls");
+    const gameArea = document.getElementById("gameArea");
 
     function choose(character) {
       characterSelect.remove();
-      hud.classList.remove("hidden");
-      canvasWrapper.classList.remove("hidden");
-      touchControls.classList.remove("hidden");
+      gameArea.classList.remove("hidden");
       startGame(character);
     }
 
