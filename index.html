@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Game</title>
+  <style>
+    body {
+      margin: 0;
+      background: #1a1a2e;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+      color: white;
+    }
+    canvas {
+      background: #16213e;
+      border: 3px solid #0f3460;
+      border-radius: 8px;
+    }
+    #ui {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      font-size: 18px;
+      background: rgba(0,0,0,0.6);
+      padding: 10px 15px;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    Red Ammo: <span id="ammo1">12</span> / 12
+    <button id="reload1">Reload Red (R)</button><br>
+    Blue Ammo: <span id="ammo2">12</span> / 12
+    <button id="reload2">Reload Blue (F)</button><br>
+    WASD = Move | Mouse = Aim | Left Click = Shoot | R = Reload Red | F = Reload Blue
+  </div>
+
+  <canvas id="game" width="900" height="600"></canvas>
+
+  <!-- This loads your game logic -->
+  <script src="Game.js"></script>
+</body>
+</html>
