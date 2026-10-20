@@ -271,11 +271,7 @@ window.addEventListener("keydown", e => {
 
   // Double tap Down to lay down
   if (key === "arrowdown") {
-    const now = Date.now();
-    if (now - lastDownTime < 300) {
-      player.state = "laying";
-    }
-    lastDownTime = now;
+    registerDownPress();
   }
 
   // Quick toggle crouch with C key (testing)
@@ -286,6 +282,77 @@ window.addEventListener("keydown", e => {
 
 window.addEventListener("keyup", e => {
   keys[e.key.toLowerCase()] = false;
+});
+
+function registerDownPress() {
+  const now = Date.now();
+  if (now - lastDownTime < 300) {
+    player.state = "laying";
+  }
+  lastDownTime = now;
+}
+
+// ===== TOUCH CONTROLS (mobile) =====
+const isTouchDevice = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
+if (isTouchDevice) {
+  document.body.classList.add("touch-device");
+}
+
+function bindHoldButton(id, key, onPress) {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+
+  const press = (e) => {
+    e.preventDefault();
+    if (!gameStarted || gameOver) return;
+    if (onPress) onPress();
+    keys[key] = true;
+  };
+  const release = (e) => {
+    e.preventDefault();
+    keys[key] = false;
+  };
+
+  btn.addEventListener("pointerdown", press);
+  btn.addEventListener("pointerup", release);
+  btn.addEventListener("pointercancel", release);
+  btn.addEventListener("pointerleave", release);
+}
+
+bindHoldButton("touchLeft", "arrowleft");
+bindHoldButton("touchRight", "arrowright");
+bindHoldButton("touchJump", "arrowup");
+bindHoldButton("touchCrouch", "arrowdown", registerDownPress);
+
+const touchFireBtn = document.getElementById("touchFire");
+if (touchFireBtn) {
+  let fireInterval = null;
+
+  const stopFire = (e) => {
+    e.preventDefault();
+    if (fireInterval) {
+      clearInterval(fireInterval);
+      fireInterval = null;
+    }
+  };
+
+  touchFireBtn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (!gameStarted) return;
+    if (gameOver) {
+      resetGame();
+      return;
+    }
+    shoot();
+    fireInterval = setInterval(shoot, 120);
+  });
+  touchFireBtn.addEventListener("pointerup", stopFire);
+  touchFireBtn.addEventListener("pointercancel", stopFire);
+  touchFireBtn.addEventListener("pointerleave", stopFire);
+}
+
+canvas.addEventListener("pointerdown", () => {
+  if (gameStarted && gameOver) resetGame();
 });
 
 // ===== SHOOT =====
