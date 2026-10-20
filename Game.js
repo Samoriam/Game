@@ -301,14 +301,12 @@ if (joystickBase && joystickThumb) {
   let joystickTouchId = null;
   let joystickCenterX = 0;
   let joystickCenterY = 0;
-  let joystickDown = false;
 
   function resetJoystickKeys() {
     keys["arrowleft"] = false;
     keys["arrowright"] = false;
     keys["arrowup"] = false;
     keys["arrowdown"] = false;
-    joystickDown = false;
   }
 
   function updateJoystick(clientX, clientY) {
@@ -325,10 +323,10 @@ if (joystickBase && joystickThumb) {
     keys["arrowright"] = dx > deadzone;
     keys["arrowup"] = dy < -deadzone;
 
-    const isDown = dy > deadzone;
-    if (isDown && !joystickDown) registerDownPress();
-    joystickDown = isDown;
-    keys["arrowdown"] = isDown;
+    // Note: unlike the keyboard's deliberate double-tap, a drag can easily
+    // jitter across this threshold twice within the lay-down window, so the
+    // joystick only crouches - it never triggers lying down.
+    keys["arrowdown"] = dy > deadzone;
   }
 
   function findTouch(touchList) {
