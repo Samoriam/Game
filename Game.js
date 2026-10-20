@@ -1,11 +1,19 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-const ammoDisplay1 = document.getElementById("ammo1");
-const ammoDisplay2 = document.getElementById("ammo2");
+const ammoDisplay = document.getElementById("ammo");
+const healthDisplay = document.getElementById("health");
+const scoreDisplay = document.getElementById("score");
+
+// ===== CHARACTER COLORS =====
+const characterColors = {
+  red: { legStroke: "#e94560", body: "#e94560", head: "#ff6b6b" },
+  blue: { legStroke: "#2f6fe6", body: "#1e90ff", head: "#6fb0ff" }
+};
+let playerColors = characterColors.red;
 
 // ===== PLAYER =====
 const player = {
-  x: 450,
+  x: 300,
   y: 450,
   width: 40,
   height: 80,
@@ -15,37 +23,118 @@ const player = {
   vy: 0,
   onGround: true,
   facing: 1, // 1 = right, -1 = left
-  state: "standing" // standing | crouching | laying
-};
-// ===== BLUE PLAYER =====
-const player2 = {
-  x: 150,
-  y: 450,
-  width: 40,
-  height: 80,
-  speed: 4,
-  jumpPower: -15,
-  gravity: 0.5,
-  vy: 0,
-  onGround: true,
-  facing: 1,
-  state: "standing"
+  state: "standing", // standing | crouching | laying
+  invincible: 0
 };
 let time = 0;
 
-// ===== GUN & AMMO (per-player) =====
-let ammo1 = 20;
-let ammo2 = 20;
+// ===== HEALTH =====
+const maxHealth = 100;
+let health = maxHealth;
+const redBirdDamage = 10; // % health lost per red bird attack
+const redBirdChaseSpeed = 6;
+const redBirdAttackRange = 40;
+const redBirdAttackCooldown = 60; // frames of player invincibility between attacks
+const redBirdMaxHp = 3; // shots needed to kill a red bird
+let gameOver = false;
+
+// ===== SCORE =====
+let score = 0;
+const birdPoints = 100;
+const redBirdPoints = 200;
+const redBirdKillBonus = 100;
+
+// ===== GUN & AMMO =====
+let ammo = 20;
 const maxAmmo = 20;
-let isReloading1 = false;
-let isReloading2 = false;
-let reloadTimer1 = 0;
-let reloadTimer2 = 0;
+let isReloading = false;
+let reloadTimer = 0;
 const reloadTime = 90;
 
 // ===== BULLETS =====
 const bullets = [];
 const bulletSpeed = 14;
+
+// ===== EXPLOSIONS =====
+const explosions = [];
+
+// ===== AIMING =====
+const mouse = {
+  x: canvas.width / 2,
+  y: canvas.height / 2,
+  active: false
+};
+
+window.addEventListener("mousemove", (event) => {
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * canvas.width;
+  mouse.y = ((event.clientY - rect.top) / rect.height) * canvas.height;
+  mouse.active = true;
+});
+
+window.addEventListener("mouseleave", () => {
+  mouse.active = false;
+});
+
+function getAimTarget(p) {
+  let target = { x: mouse.x, y: mouse.y };
+
+  if (!mouse.active) {
+    let nearestBird = null;
+    let nearestDistance = Infinity;
+
+    for (const bird of birds) {
+      if (!bird.alive || bird.dying) continue;
+      const distance = Math.hypot(bird.x - (p.x + p.width / 2), bird.y - (p.y + p.height / 2));
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestBird = bird;
+      }
+    }
+
+    if (nearestBird) {
+      target = { x: nearestBird.x, y: nearestBird.y };
+    }
+  }
+
+  return target;
+}
+
+// Gun pivot point in world space (matches the translate() used when drawing the gun)
+function getGunPivot(p) {
+  const isCrouch = p.state === "crouching";
+  const sway = Math.sin(time * 0.05) * 3;
+  const bob = Math.sin(time * 0.08) * 2;
+  const gunX = p.x + (p.facing === 1 ? (isCrouch ? 65 : 85) : -(isCrouch ? 65 : 85)) + sway;
+  const gunY = p.y + (isCrouch ? 30 : 10) + bob;
+  return { x: gunX, y: gunY };
+}
+
+// World-space position of the gun's muzzle, accounting for the current aim angle
+function getMuzzlePosition(p, angle) {
+  const pivot = getGunPivot(p);
+  const barrelLength = 75; // matches the barrel rect's far edge in drawPlayer's gun
+  const localOffsetY = 1; // vertical center of the gun body/barrel rects
+  return {
+    x: pivot.x + Math.cos(angle) * barrelLength - Math.sin(angle) * localOffsetY,
+    y: pivot.y + Math.sin(angle) * barrelLength + Math.cos(angle) * localOffsetY
+  };
+}
+
+function getAimAngle(p) {
+  const target = getAimTarget(p);
+  const dx = target.x - (p.x + p.width / 2);
+  const dy = target.y - (p.y + p.height / 2);
+  const angle = Math.atan2(dy, dx);
+
+  if (dx >= 0) {
+    p.facing = 1;
+  } else {
+    p.facing = -1;
+  }
+
+  return angle;
+}
 
 // ===== BIRDS =====
 const birds = [];
@@ -57,6 +146,7 @@ function spawnBird() {
   const x = fromLeft ? -40 : canvas.width + 40;
   const y = 50 + Math.random() * 180;
   const speed = 1.5 + Math.random() * 2.5;
+  const isExploding = Math.random() < 0.2;
 
   birds.push({
     x,
@@ -65,7 +155,13 @@ function spawnBird() {
     height: 16,
     vx: (fromLeft ? 1 : -1) * speed,
     phase: Math.random() * Math.PI * 2,
-    alive: true
+    alive: true,
+    isExploding,
+    dying: false,
+    attacking: false,
+    hp: isExploding ? redBirdMaxHp : 1,
+    fallVy: 0,
+    rotation: 0
   });
 }
 
@@ -74,17 +170,20 @@ function drawBird(bird) {
 
   const direction = bird.vx >= 0 ? 1 : -1;
   const wingLift = Math.sin(time * 0.18 + bird.phase) * 8;
+  const bodyColor = bird.isExploding ? "#8b1a1a" : "#2d2d2d";
+  const wingColor = bird.isExploding ? "#5c0f0f" : "#171717";
 
   ctx.save();
   ctx.translate(bird.x, bird.y);
+  if (bird.dying) ctx.rotate(bird.rotation);
   ctx.scale(direction, 1);
 
-  ctx.fillStyle = "#2d2d2d";
+  ctx.fillStyle = bodyColor;
   ctx.beginPath();
   ctx.ellipse(0, 0, 18, 9, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = "#171717";
+  ctx.fillStyle = wingColor;
   ctx.beginPath();
   ctx.moveTo(-4, -1);
   ctx.lineTo(-16, -10 - wingLift);
@@ -110,37 +209,48 @@ function drawBird(bird) {
   ctx.fill();
 
   ctx.restore();
+
+  if (bird.isExploding && bird.attacking && !bird.dying) {
+    const barWidth = 30;
+    const barHeight = 5;
+    const barX = bird.x - barWidth / 2;
+    const barY = bird.y - 22;
+    const hpFraction = Math.max(bird.hp, 0) / redBirdMaxHp;
+
+    ctx.fillStyle = "#333";
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+    ctx.fillStyle = "#ff3b3b";
+    ctx.fillRect(barX, barY, barWidth * hpFraction, barHeight);
+  }
 }
 
-// Setup reload button handlers (if elements exist)
-const reloadBtn1 = document.getElementById("reload1");
-const reloadBtn2 = document.getElementById("reload2");
-if (reloadBtn1) {
-  reloadBtn1.addEventListener("click", () => {
-    if (!isReloading1 && ammo1 < maxAmmo) {
-      isReloading1 = true;
-      reloadTimer1 = reloadTime;
+// Setup reload button handler (if element exists)
+const reloadBtn = document.getElementById("reload");
+if (reloadBtn) {
+  reloadBtn.addEventListener("click", () => {
+    if (!isReloading && ammo < maxAmmo) {
+      isReloading = true;
+      reloadTimer = reloadTime;
     }
   });
 }
-if (reloadBtn2) {
-  reloadBtn2.addEventListener("click", () => {
-    if (!isReloading2 && ammo2 < maxAmmo) {
-      isReloading2 = true;
-      reloadTimer2 = reloadTime;
-    }
-  });
-}
-
 
 // ===== KEYS & DOUBLE TAP =====
 const keys = {};
 let lastDownTime = 0;
-let lastDownTime2 = 0;
+let gameStarted = false;
 
 // ===== EVENT LISTENERS =====
 window.addEventListener("keydown", e => {
+  if (!gameStarted) return;
+
   const key = e.key.toLowerCase();
+
+  if (gameOver) {
+    if (key === "r") resetGame();
+    return;
+  }
+
   keys[key] = true;
 
   // Prevent page scrolling with arrows & space
@@ -148,28 +258,15 @@ window.addEventListener("keydown", e => {
     e.preventDefault();
   }
 
-  // Reload with /
-  if (key === "/" && !isReloading1 && ammo1 < maxAmmo) {
-    isReloading1 = true;
-    reloadTimer1 = reloadTime;
-  }
-  // Reload blue with F
-  if (key === "f" && !isReloading2 && ammo2 < maxAmmo) {
-    isReloading2 = true;
-    reloadTimer2 = reloadTime;
+  // Reload with Shift
+  if (key === "shift" && !isReloading && ammo < maxAmmo) {
+    isReloading = true;
+    reloadTimer = reloadTime;
   }
 
   // Shoot with Space
   if (key === " " || key === "spacebar") {
     shoot();
-  }
-
-  // Shoot with left/right Shift for player2/player1
-  if (e.code === "ShiftLeft") {
-    shootFrom(player2);
-  }
-  if (e.code === "ShiftRight") {
-    shootFrom(player);
   }
 
   // Double tap Down to lay down
@@ -179,15 +276,6 @@ window.addEventListener("keydown", e => {
       player.state = "laying";
     }
     lastDownTime = now;
-  }
-
-  // Double tap S to lay down for player2
-  if (key === "s") {
-    const now2 = Date.now();
-    if (now2 - lastDownTime2 < 300) {
-      player2.state = "laying";
-    }
-    lastDownTime2 = now2;
   }
 
   // Quick toggle crouch with C key (testing)
@@ -202,36 +290,28 @@ window.addEventListener("keyup", e => {
 
 // ===== SHOOT =====
 function shoot() {
-  shootFrom(player);
-}
+  if (player.state === "laying") return;
+  if (isReloading || ammo <= 0) return;
 
-// Shoot from a specific player (supports player and player2)
-function shootFrom(p) {
-  if (p.state === "laying") return;
+  ammo--;
+  ammoDisplay.textContent = ammo;
 
-  const isPlayer1 = p === player;
-  if (isPlayer1) {
-    if (isReloading1 || ammo1 <= 0) return;
-    ammo1--;
-    ammoDisplay1.textContent = ammo1;
-  } else {
-    if (isReloading2 || ammo2 <= 0) return;
-    ammo2--;
-    ammoDisplay2.textContent = ammo2;
-  }
+  const angle = getAimAngle(player);
+  const muzzle = getMuzzlePosition(player, angle);
 
-  const direction = p.facing;
   bullets.push({
-    x: p.x + (direction === 1 ? 145 : -150),
-    y: p.y + (p.state === "crouching" ? -10 :  8),
-    vx: direction * bulletSpeed,
-    vy: 0,
-    life: 70      
+    x: muzzle.x,
+    y: muzzle.y,
+    vx: Math.cos(angle) * bulletSpeed,
+    vy: Math.sin(angle) * bulletSpeed,
+    life: 70
   });
 }
-                 
+
 // ===== UPDATE =====
 function update() {
+  if (gameOver) return;
+
   // Horizontal movement
   if (keys["arrowleft"] && !keys["arrowright"]) {
     player.x -= player.speed;
@@ -259,40 +339,9 @@ function update() {
     player.state = "standing";
   }
 
-  // ===== PLAYER2 (WASD) =====
-  if (keys["a"] && !keys["d"]) {
-    player2.x -= player2.speed;
-    player2.facing = -1;
-  }
-  if (keys["d"] && !keys["a"]) {
-    player2.x += player2.speed;
-    player2.facing = 1;
-  }
-
-  // Jump / Stand up for player2
-  if (keys["w"]) {
-    if (player2.state === "crouching" || player2.state === "laying") {
-      player2.state = "standing";
-    } else if (player2.onGround) {
-      player2.vy = player2.jumpPower;
-      player2.onGround = false;
-    }
-  }
-
-  // Crouch for player2
-  if (keys["s"] && player2.onGround && player2.state !== "laying") {
-    player2.state = "crouching";
-  } else if (!keys["s"] && player2.state === "crouching") {
-    player2.state = "standing";
-  }
-
   // Gravity & jumping
   player.vy += player.gravity;
   player.y += player.vy;
-
-  // Gravity & jumping for player2
-  player2.vy += player2.gravity;
-  player2.y += player2.vy;
 
   // Ground collision
   const groundY = 500;
@@ -301,20 +350,13 @@ function update() {
     player.vy = 0;
     player.onGround = true;
   }
-  // Ground collision for player2
-  if (player2.y >= groundY) {
-    player2.y = groundY;
-    player2.vy = 0;
-    player2.onGround = true;
-  }
 
   // Boundary collision
   if (player.x < 0) player.x = 0;
   if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
 
-  // Boundary collision for player2
-  if (player2.x < 0) player2.x = 0;
-  if (player2.x + player2.width > canvas.width) player2.x = canvas.width - player2.width;
+  // Invincibility countdown after taking a hit
+  if (player.invincible > 0) player.invincible--;
 
   // Update bullets
   for (let i = bullets.length - 1; i >= 0; i--) {
@@ -329,7 +371,7 @@ function update() {
 
     for (let j = birds.length - 1; j >= 0; j--) {
       const bird = birds[j];
-      if (!bird.alive) continue;
+      if (!bird.alive || bird.dying) continue;
 
       const hitBird =
         bullets[i].x > bird.x - bird.width / 2 &&
@@ -338,7 +380,22 @@ function update() {
         bullets[i].y < bird.y + bird.height / 2;
 
       if (hitBird) {
-        bird.alive = false;
+        bird.hp--;
+
+        if (bird.isExploding && !bird.attacking) {
+          // First hit enrages the red bird instead of killing it
+          bird.attacking = true;
+          score += redBirdPoints;
+        }
+
+        if (bird.hp <= 0) {
+          bird.dying = true;
+          bird.attacking = false;
+          bird.fallVy = -3;
+          score += bird.isExploding ? redBirdKillBonus : birdPoints;
+        }
+        scoreDisplay.textContent = score;
+
         bullets.splice(i, 1);
         break;
       }
@@ -357,8 +414,41 @@ function update() {
 
   for (let i = birds.length - 1; i >= 0; i--) {
     const bird = birds[i];
-    if (!bird.alive) {
-      birds.splice(i, 1);
+
+    if (bird.dying) {
+      bird.fallVy += player.gravity;
+      bird.y += bird.fallVy;
+      bird.x += bird.vx * 0.3;
+      bird.rotation += (bird.vx >= 0 ? 1 : -1) * 0.15;
+
+      if (bird.y > 520) {
+        birds.splice(i, 1);
+      }
+      continue;
+    }
+
+    if (bird.attacking) {
+      const targetX = player.x + player.width / 2;
+      const targetY = player.y;
+      const dx = targetX - bird.x;
+      const dy = targetY - bird.y;
+      const dist = Math.hypot(dx, dy) || 1;
+
+      bird.vx = (dx / dist) * redBirdChaseSpeed;
+      bird.x += bird.vx;
+      bird.y += (dy / dist) * redBirdChaseSpeed;
+
+      if (dist < redBirdAttackRange && player.invincible <= 0) {
+        health -= redBirdDamage;
+        if (health < 0) health = 0;
+        healthDisplay.textContent = health;
+        player.invincible = redBirdAttackCooldown;
+        explosions.push({ x: player.x, y: player.y - 30, radius: 6, life: 20 });
+
+        if (health <= 0) {
+          gameOver = true;
+        }
+      }
       continue;
     }
 
@@ -370,23 +460,22 @@ function update() {
     }
   }
 
-  // Reload
-  // Reload for player1 (red)
-  if (isReloading1) {
-    reloadTimer1--;
-    if (reloadTimer1 <= 0) {
-      isReloading1 = false;
-      ammo1 = maxAmmo;
-      ammoDisplay1.textContent = ammo1;
+  // Update explosion visuals
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    explosions[i].radius += 2;
+    explosions[i].life--;
+    if (explosions[i].life <= 0) {
+      explosions.splice(i, 1);
     }
   }
-  // Reload for player2 (blue)
-  if (isReloading2) {
-    reloadTimer2--;
-    if (reloadTimer2 <= 0) {
-      isReloading2 = false;
-      ammo2 = maxAmmo;
-      ammoDisplay2.textContent = ammo2;
+
+  // Reload
+  if (isReloading) {
+    reloadTimer--;
+    if (reloadTimer <= 0) {
+      isReloading = false;
+      ammo = maxAmmo;
+      ammoDisplay.textContent = ammo;
     }
   }
 }
@@ -401,10 +490,11 @@ function draw() {
   ctx.fillStyle = "#228B22";
   ctx.fillRect(0, 500, canvas.width, canvas.height);
 
-  // Helper to draw a player (shared logic)
+  // Helper to draw the player
   function drawPlayer(p, colors) {
     const sway = Math.sin(time * 0.05) * 3;
     const bob = Math.sin(time * 0.08) * 2;
+    const aimAngle = getAimAngle(p);
     const facing = p.facing;
 
     const isCrouch = p.state === "crouching";
@@ -515,7 +605,7 @@ function draw() {
     // Gun
     ctx.save();
     ctx.translate(gunX, gunY);
-    ctx.scale(facing, 1);
+    ctx.rotate(aimAngle);
 
     ctx.fillStyle = "#333";
     ctx.fillRect(0, -6, 55, 14);
@@ -536,26 +626,52 @@ function draw() {
     drawBird(bird);
   }
 
-  // Draw both players (player is red, player2 is blue)
-  drawPlayer(player, { legStroke: "#e94560", body: "#e94560", head: "#ff6b6b" });
-  drawPlayer(player2, { legStroke: "#2f6fe6", body: "#1e90ff", head: "#6fb0ff" });
+  // Draw the player (blink while invincible after taking a hit)
+  if (player.invincible <= 0 || Math.floor(time / 4) % 2 === 0) {
+    drawPlayer(player, playerColors);
+  }
 
   // Draw bullets
-  ctx.fillStyle = "#FFD700";
+  ctx.fillStyle = "#000000";
   for (let bullet of bullets) {
     ctx.fillRect(bullet.x - 3, bullet.y - 3, 6, 6);
   }
 
+  // Draw explosion bursts (red bird attack impacts)
+  for (const explosion of explosions) {
+    const alpha = Math.max(explosion.life / 20, 0);
+    ctx.fillStyle = `rgba(255, 140, 0, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(explosion.x, explosion.y, explosion.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(255, 60, 0, ${alpha * 0.7})`;
+    ctx.beginPath();
+    ctx.arc(explosion.x, explosion.y, explosion.radius * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // Draw reload indicator
-  // Draw reload indicators per player
   ctx.fillStyle = "#000";
   ctx.font = "16px Arial";
-  if (isReloading1) {
-    ctx.fillText("Reloading Red...", 10, 30);
+  if (isReloading) {
+    ctx.fillText("Reloading...", 10, 30);
   }
-  if (isReloading2) {
-    ctx.fillText("Reloading Blue...", 10, 50);
+
+  // Game over overlay
+  if (gameOver) {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.font = "48px Arial";
+    ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 10);
+    ctx.font = "20px Arial";
+    ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 20);
+    ctx.fillText("Press R to Restart", canvas.width / 2, canvas.height / 2 + 50);
+    ctx.textAlign = "left";
   }
+
   time++;
 }
 
@@ -566,4 +682,33 @@ function gameLoop() {
   requestAnimationFrame(gameLoop);
 }
 
-gameLoop();
+// Called once the player picks a character on the selection screen
+function startGame(character) {
+  playerColors = characterColors[character] || characterColors.red;
+  gameStarted = true;
+  gameLoop();
+}
+
+// Reset all game state after a Game Over
+function resetGame() {
+  health = maxHealth;
+  healthDisplay.textContent = health;
+  score = 0;
+  scoreDisplay.textContent = score;
+  ammo = maxAmmo;
+  ammoDisplay.textContent = ammo;
+  isReloading = false;
+  reloadTimer = 0;
+  gameOver = false;
+
+  player.x = 300;
+  player.y = 450;
+  player.vy = 0;
+  player.onGround = true;
+  player.state = "standing";
+  player.invincible = 0;
+
+  bullets.length = 0;
+  birds.length = 0;
+  explosions.length = 0;
+}
