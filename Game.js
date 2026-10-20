@@ -36,6 +36,8 @@ const redBirdChaseSpeed = 6;
 const redBirdAttackRange = 40;
 const redBirdAttackCooldown = 60; // frames of player invincibility between attacks
 const redBirdMaxHp = 3; // shots needed to kill a red bird
+const redBirdRetreatSpeed = 4;
+const redBirdRetreatTime = 90; // frames the bird backs off after landing a hit, giving the player room to shoot back
 let gameOver = false;
 
 // ===== SCORE =====
@@ -160,6 +162,7 @@ function spawnBird() {
     dying: false,
     attacking: false,
     hp: isExploding ? redBirdMaxHp : 1,
+    retreatTimer: 0,
     fallVy: 0,
     rotation: 0
   });
@@ -562,6 +565,15 @@ function update() {
       const dy = targetY - bird.y;
       const dist = Math.hypot(dx, dy) || 1;
 
+      if (bird.retreatTimer > 0) {
+        // Back off after landing a hit so the player has room to shoot back
+        bird.retreatTimer--;
+        bird.vx = (-dx / dist) * redBirdRetreatSpeed;
+        bird.x += bird.vx;
+        bird.y += (-dy / dist) * redBirdRetreatSpeed;
+        continue;
+      }
+
       bird.vx = (dx / dist) * redBirdChaseSpeed;
       bird.x += bird.vx;
       bird.y += (dy / dist) * redBirdChaseSpeed;
@@ -571,6 +583,7 @@ function update() {
         if (health < 0) health = 0;
         healthDisplay.textContent = health;
         player.invincible = redBirdAttackCooldown;
+        bird.retreatTimer = redBirdRetreatTime;
         explosions.push({ x: player.x, y: player.y - 30, radius: 6, life: 20 });
 
         if (health <= 0) {
