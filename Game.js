@@ -15,6 +15,46 @@ const characterColors = {
   blue: { legStroke: "#2f6fe6", body: "#1e90ff", head: "#6fb0ff" }
 };
 let playerColors = characterColors.red;
+let playerColorKey = "red";
+
+// ===== MULTIPLAYER =====
+// Host simulates birds/geese/power-ups and broadcasts them; the guest
+// mirrors that broadcast instead of spawning its own. Each player always
+// manages their own position/health/ammo/score locally and just shares it.
+let remotePlayer = null; // last known state of the other player, or null if solo/not yet heard from
+let nextEntityId = 1;
+let mpBroadcastTimer = 0;
+const mpBroadcastInterval = 3; // frames between network broadcasts (~20/sec)
+
+function isGuestRole() {
+  return Net.getRole() === "guest";
+}
+
+function simulatingWorld() {
+  // True for the host and for solo play - false only for a connected guest,
+  // who mirrors the host's broadcast instead.
+  return !isGuestRole();
+}
+
+function otherPlayerAvailable() {
+  return !!remotePlayer && !remotePlayer.gameOver;
+}
+
+// Picks whichever player (local or remote) is nearer to a bird, so a
+// host-simulated attacking red bird can chase either one.
+function getChaseTarget(bird) {
+  const localTarget = { x: player.x + player.width / 2, y: player.y, isLocal: true };
+  if (!otherPlayerAvailable()) return localTarget;
+
+  const localDist = Math.hypot(localTarget.x - bird.x, localTarget.y - bird.y);
+  const remoteX = remotePlayer.x + player.width / 2;
+  const remoteDist = Math.hypot(remoteX - bird.x, remotePlayer.y - bird.y);
+
+  if (remoteDist < localDist) {
+    return { x: remoteX, y: remotePlayer.y, isLocal: false };
+  }
+  return localTarget;
+}
 
 // ===== PLAYER =====
 const player = {
@@ -163,13 +203,13 @@ let nextSkyDropScore = skyDropScoreInterval;
 
 function spawnPowerUp(x) {
   const type = buffPowerUpTypes[Math.floor(Math.random() * buffPowerUpTypes.length)];
-  powerUps.push({ x, y: powerUpGroundY, type, kind: "buff", falling: false, life: powerUpLifetime, bob: Math.random() * Math.PI * 2 });
+  powerUps.push({ id: nextEntityId++, x, y: powerUpGroundY, type, kind: "buff", falling: false, life: powerUpLifetime, bob: Math.random() * Math.PI * 2 });
 }
 
 function spawnSkyDrop() {
   const type = instantPowerUpTypes[Math.floor(Math.random() * instantPowerUpTypes.length)];
   const x = 60 + Math.random() * (canvas.width - 120);
-  powerUps.push({ x, y: 20, type, kind: "instant", falling: true, vy: skyDropFallSpeed, life: powerUpLifetime, bob: Math.random() * Math.PI * 2 });
+  powerUps.push({ id: nextEntityId++, x, y: 20, type, kind: "instant", falling: true, vy: skyDropFallSpeed, life: powerUpLifetime, bob: Math.random() * Math.PI * 2 });
 }
 
 function effectiveMaxAmmo() {
@@ -341,6 +381,7 @@ function spawnBird() {
   const startsAttacking = isExploding && score >= autoAttackScoreThreshold && Math.random() < autoAttackChance;
 
   birds.push({
+    id: nextEntityId++,
     x,
     y,
     width: 28,
@@ -445,6 +486,7 @@ function spawnGoose() {
   const speed = (0.6 + Math.random() * 0.6) * birdSpeedMultiplier();
 
   geese.push({
+    id: nextEntityId++,
     x,
     y: flying ? gooseFlyingY : gooseWalkingY,
     flying,
@@ -525,6 +567,102 @@ function drawGoose(goose) {
     ctx.fillRect(barX, barY, barWidth * hpFraction, barHeight);
   }
 }
+
+// Shared by a local bullet hit and an incoming network "hit" message, so a
+// kill resolves the same way regardless of which player's shot did it.
+// awardScore is false when applying a hit the OTHER player already scored.
+function applyBirdHit(bird, awardScore) {
+  bird.hp--;
+
+  if (bird.isExploding && !bird.attacking) {
+    bird.attacking = true;
+    if (awardScore) score += redBirdPoints;
+  }
+
+  if (bird.hp <= 0) {
+    bird.dying = true;
+    bird.attacking = false;
+    bird.fallVy = -3;
+
+    if (bird.isExploding) {
+      if (awardScore) score += redBirdKillBonus;
+    } else if (bird.isPurple) {
+      if (awardScore) score += purpleBirdPoints;
+      if (simulatingWorld()) spawnPowerUp(bird.x);
+    } else if (awardScore) {
+      score += birdPoints;
+    }
+  }
+
+  if (awardScore) scoreDisplay.textContent = score;
+}
+
+function applyGooseHit(goose, awardScore) {
+  goose.hp--;
+  const died = goose.hp <= 0;
+
+  if (died && awardScore) {
+    score += goosePoints;
+    scoreDisplay.textContent = score;
+  }
+
+  return died;
+}
+
+// ===== MULTIPLAYER MESSAGE HANDLERS =====
+Net.on("player", (data) => {
+  remotePlayer = data;
+});
+
+Net.on("world", (data) => {
+  if (!isGuestRole()) return; // only a guest mirrors the host's broadcast
+
+  birds.length = 0;
+  for (const b of data.birds) birds.push(b);
+
+  geese.length = 0;
+  for (const g of data.geese) geese.push(g);
+
+  powerUps.length = 0;
+  for (const p of data.powerUps) powerUps.push(p);
+});
+
+Net.on("hit", (data) => {
+  if (!simulatingWorld()) return; // host applies hits reported by the guest
+
+  if (data.kind === "bird") {
+    const bird = birds.find((b) => b.id === data.id);
+    if (bird && !bird.dying) applyBirdHit(bird, false);
+  } else if (data.kind === "goose") {
+    const index = geese.findIndex((g) => g.id === data.id);
+    if (index !== -1) {
+      const died = applyGooseHit(geese[index], false);
+      if (died) {
+        explosions.push({ x: geese[index].x, y: geese[index].y, radius: 4, life: 15 });
+        geese.splice(index, 1);
+      }
+    }
+  }
+});
+
+Net.on("retreat", (data) => {
+  if (!simulatingWorld()) return;
+  const bird = birds.find((b) => b.id === data.id);
+  if (bird) bird.retreatTimer = redBirdRetreatTime;
+});
+
+Net.on("pickup", (data) => {
+  if (!simulatingWorld()) return;
+  const index = powerUps.findIndex((p) => p.id === data.id);
+  if (index !== -1) powerUps.splice(index, 1);
+});
+
+Net.on("disconnected", () => {
+  remotePlayer = null;
+  // A guest who loses the host's feed falls back to simulating its own
+  // world from here (simulatingWorld() becomes true once the role clears).
+  Net.disconnect();
+});
 
 // ===== KEYS & DOUBLE TAP =====
 const keys = {};
@@ -808,30 +946,36 @@ function update() {
   updateBuffsDisplay();
 
   // A one-time instant power-up falls from the sky at each score milestone
-  if (score >= nextSkyDropScore) {
+  // (world-simulating side only - a connected guest mirrors the host's drops)
+  if (simulatingWorld() && score >= nextSkyDropScore) {
     spawnSkyDrop();
     nextSkyDropScore += skyDropScoreInterval;
   }
 
-  // The gun permanently upgrades at every gunUpgradeInterval points
+  // The gun permanently upgrades at every gunUpgradeInterval points - purely
+  // local to each player's own score, no networking involved
   syncGunUpgrades();
   if (gunUpgradeMessageTimer > 0) gunUpgradeMessageTimer--;
 
-  // Power-up pickups on the ground (or still falling, for sky drops)
+  // Power-up pickups on the ground (or still falling, for sky drops).
+  // Falling/despawn timing is world state (host/solo only); picking one up
+  // is always a local check against this player's own position.
   for (let i = powerUps.length - 1; i >= 0; i--) {
     const pu = powerUps[i];
 
-    if (pu.falling) {
-      pu.y += pu.vy;
-      if (pu.y >= powerUpGroundY) {
-        pu.y = powerUpGroundY;
-        pu.falling = false;
-      }
-    } else {
-      pu.life--;
-      if (pu.life <= 0) {
-        powerUps.splice(i, 1);
-        continue;
+    if (simulatingWorld()) {
+      if (pu.falling) {
+        pu.y += pu.vy;
+        if (pu.y >= powerUpGroundY) {
+          pu.y = powerUpGroundY;
+          pu.falling = false;
+        }
+      } else {
+        pu.life--;
+        if (pu.life <= 0) {
+          powerUps.splice(i, 1);
+          continue;
+        }
       }
     }
 
@@ -842,6 +986,7 @@ function update() {
       } else {
         applyInstantPowerUp(pu.type);
       }
+      if (isGuestRole()) Net.send("pickup", { id: pu.id });
       powerUps.splice(i, 1);
     }
   }
@@ -916,29 +1061,8 @@ function update() {
         bullets[i].y < bird.y + bird.height / 2;
 
       if (hitBird) {
-        bird.hp--;
-
-        if (bird.isExploding && !bird.attacking) {
-          // First hit enrages the red bird instead of killing it
-          bird.attacking = true;
-          score += redBirdPoints;
-        }
-
-        if (bird.hp <= 0) {
-          bird.dying = true;
-          bird.attacking = false;
-          bird.fallVy = -3;
-
-          if (bird.isExploding) {
-            score += redBirdKillBonus;
-          } else if (bird.isPurple) {
-            score += purpleBirdPoints;
-            spawnPowerUp(bird.x);
-          } else {
-            score += birdPoints;
-          }
-        }
-        scoreDisplay.textContent = score;
+        applyBirdHit(bird, true);
+        if (Net.isConnected()) Net.send("hit", { kind: "bird", id: bird.id });
 
         bullets.splice(i, 1);
         bulletConsumed = true;
@@ -958,13 +1082,12 @@ function update() {
         bullets[i].y < goose.y + gooseHitboxHeight / 2;
 
       if (hitGoose) {
-        goose.hp--;
+        const died = applyGooseHit(goose, true);
+        if (Net.isConnected()) Net.send("hit", { kind: "goose", id: goose.id });
 
-        if (goose.hp <= 0) {
+        if (died) {
           explosions.push({ x: goose.x, y: goose.y, radius: 4, life: 15 });
           geese.splice(j, 1);
-          score += goosePoints;
-          scoreDisplay.textContent = score;
         }
 
         bullets.splice(i, 1);
@@ -973,55 +1096,75 @@ function update() {
     }
   }
 
-  // Bird population and flight
-  if (birdSpawnTimer > 0) {
-    birdSpawnTimer--;
-  }
+  // Bird population and flight (world-simulating side only - a connected
+  // guest mirrors the host's bird positions instead of spawning/moving its
+  // own, but still independently checks whether an attacking bird that's
+  // currently in range has hit ITS OWN local player)
+  if (simulatingWorld()) {
+    if (birdSpawnTimer > 0) {
+      birdSpawnTimer--;
+    }
 
-  if (birds.length < maxBirds && birdSpawnTimer <= 0) {
-    spawnBird();
-    birdSpawnTimer = 60 + Math.random() * 90;
+    if (birds.length < maxBirds && birdSpawnTimer <= 0) {
+      spawnBird();
+      birdSpawnTimer = 60 + Math.random() * 90;
+    }
   }
 
   for (let i = birds.length - 1; i >= 0; i--) {
     const bird = birds[i];
 
     if (bird.dying) {
-      bird.fallVy += player.gravity;
-      bird.y += bird.fallVy;
-      bird.x += bird.vx * 0.3;
-      bird.rotation += (bird.vx >= 0 ? 1 : -1) * 0.15;
+      if (simulatingWorld()) {
+        bird.fallVy += player.gravity;
+        bird.y += bird.fallVy;
+        bird.x += bird.vx * 0.3;
+        bird.rotation += (bird.vx >= 0 ? 1 : -1) * 0.15;
 
-      if (bird.y > 520) {
-        birds.splice(i, 1);
+        if (bird.y > 520) {
+          birds.splice(i, 1);
+        }
       }
       continue;
     }
 
     if (bird.attacking) {
-      const targetX = player.x + player.width / 2;
-      const targetY = player.y;
-      const dx = targetX - bird.x;
-      const dy = targetY - bird.y;
-      const dist = Math.hypot(dx, dy) || 1;
-
       if (bird.retreatTimer > 0) {
         // Back off after landing a hit so the player has room to shoot back
-        bird.retreatTimer--;
-        bird.vx = (-dx / dist) * redBirdRetreatSpeed;
-        bird.x += bird.vx;
-        bird.y += (-dy / dist) * redBirdRetreatSpeed;
+        if (simulatingWorld()) {
+          const chase = getChaseTarget(bird);
+          const dx = chase.x - bird.x;
+          const dy = chase.y - bird.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          bird.retreatTimer--;
+          bird.vx = (-dx / dist) * redBirdRetreatSpeed;
+          bird.x += bird.vx;
+          bird.y += (-dy / dist) * redBirdRetreatSpeed;
+        }
         continue;
       }
 
-      bird.vx = (dx / dist) * redBirdChaseSpeed;
-      bird.x += bird.vx;
-      bird.y += (dy / dist) * redBirdChaseSpeed;
+      if (simulatingWorld()) {
+        const chase = getChaseTarget(bird);
+        const dx = chase.x - bird.x;
+        const dy = chase.y - bird.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        bird.vx = (dx / dist) * redBirdChaseSpeed;
+        bird.x += bird.vx;
+        bird.y += (dy / dist) * redBirdChaseSpeed;
+      }
 
-      if (dist < redBirdAttackRange && player.invincible <= 0) {
+      // Every client checks this attacking bird against its OWN local player
+      const localDist = Math.hypot((player.x + player.width / 2) - bird.x, player.y - bird.y);
+      if (localDist < redBirdAttackRange && player.invincible <= 0) {
         player.invincible = redBirdAttackCooldown;
-        bird.retreatTimer = redBirdRetreatTime;
         explosions.push({ x: player.x, y: player.y - 30, radius: 6, life: 20 });
+
+        if (simulatingWorld()) {
+          bird.retreatTimer = redBirdRetreatTime;
+        } else {
+          Net.send("retreat", { id: bird.id });
+        }
 
         if (shieldTimer <= 0) {
           health -= redBirdDamage;
@@ -1038,16 +1181,20 @@ function update() {
       continue;
     }
 
-    bird.x += bird.vx;
-    bird.y += Math.sin((time * 0.08) + bird.phase) * 0.7;
+    if (simulatingWorld()) {
+      bird.x += bird.vx;
+      bird.y += Math.sin((time * 0.08) + bird.phase) * 0.7;
 
-    if (bird.x < -60 || bird.x > canvas.width + 60) {
-      birds.splice(i, 1);
+      if (bird.x < -60 || bird.x > canvas.width + 60) {
+        birds.splice(i, 1);
+      }
     }
   }
 
   // Geese: ground-level hazards once the score is high enough
-  if (score >= gooseStartScore) {
+  // (world-simulating side only spawns/moves them; every client still
+  // checks its own player against the current positions)
+  if (simulatingWorld() && score >= gooseStartScore) {
     if (gooseSpawnTimer > 0) gooseSpawnTimer--;
     if (geese.length < maxGeese && gooseSpawnTimer <= 0) {
       spawnGoose();
@@ -1057,11 +1204,14 @@ function update() {
 
   for (let i = geese.length - 1; i >= 0; i--) {
     const goose = geese[i];
-    goose.x += goose.vx;
 
-    if (goose.x < -60 || goose.x > canvas.width + 60) {
-      geese.splice(i, 1);
-      continue;
+    if (simulatingWorld()) {
+      goose.x += goose.vx;
+
+      if (goose.x < -60 || goose.x > canvas.width + 60) {
+        geese.splice(i, 1);
+        continue;
+      }
     }
 
     const withinX = Math.abs((player.x + player.width / 2) - goose.x) < gooseCollisionRangeX;
@@ -1107,6 +1257,34 @@ function update() {
       updateAmmoDisplay();
     }
   }
+
+  // Multiplayer: broadcast this player's state, and the shared world if
+  // this side is the one simulating it
+  if (Net.isConnected()) {
+    mpBroadcastTimer++;
+    if (mpBroadcastTimer >= mpBroadcastInterval) {
+      mpBroadcastTimer = 0;
+
+      Net.send("player", {
+        x: player.x,
+        y: player.y,
+        state: player.state,
+        facing: player.facing,
+        aimAngle: getAimAngle(player),
+        health,
+        maxHealth,
+        ammo,
+        maxAmmo: effectiveMaxAmmo(),
+        score,
+        color: playerColorKey,
+        gameOver
+      });
+
+      if (simulatingWorld()) {
+        Net.send("world", { birds, geese, powerUps });
+      }
+    }
+  }
 }
 
 // ===== DRAW =====
@@ -1120,10 +1298,13 @@ function draw() {
   ctx.fillRect(0, 500, canvas.width, canvas.height);
 
   // Helper to draw the player
-  function drawPlayer(p, colors) {
+  function drawPlayer(p, colors, overrideAimAngle) {
     const sway = Math.sin(time * 0.05) * 3;
     const bob = Math.sin(time * 0.08) * 2;
-    const aimAngle = getAimAngle(p);
+    // A remote player's aim comes from the network instead of local
+    // mouse/aim-stick input, so getAimAngle() (which reads local input and
+    // would also overwrite p.facing) is skipped when an angle is supplied.
+    const aimAngle = overrideAimAngle !== undefined ? overrideAimAngle : getAimAngle(p);
     const facing = p.facing;
 
     const isCrouch = p.state === "crouching";
@@ -1302,6 +1483,18 @@ function draw() {
     drawPlayer(player, playerColors);
   }
 
+  // Draw the other player, if connected
+  if (otherPlayerAvailable()) {
+    const remoteColors = characterColors[remotePlayer.color] || characterColors.blue;
+    drawPlayer(remotePlayer, remoteColors, remotePlayer.aimAngle);
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 12px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("P2", remotePlayer.x, remotePlayer.y - 95);
+    ctx.textAlign = "left";
+  }
+
   // Draw the protective bubble shield
   if (shieldTimer > 0) {
     ctx.strokeStyle = "rgba(79, 195, 247, 0.8)";
@@ -1392,14 +1585,30 @@ if (exitBtn) {
     stopGameLoop();
     resetGame();
     gameStarted = false;
+    Net.disconnect();
+    remotePlayer = null;
     if (gameAreaEl) gameAreaEl.classList.add("hidden");
     if (characterSelectEl) characterSelectEl.classList.remove("hidden");
+
+    // Reset the online-lobby UI back to its starting state
+    const mpModeButtonsEl = document.getElementById("mpModeButtons");
+    const mpHostBoxEl = document.getElementById("mpHostBox");
+    const mpJoinBoxEl = document.getElementById("mpJoinBox");
+    const mpStatusMsgEl = document.getElementById("mpStatusMsg");
+    if (mpHostBoxEl) mpHostBoxEl.classList.add("hidden");
+    if (mpJoinBoxEl) mpJoinBoxEl.classList.add("hidden");
+    if (mpModeButtonsEl) mpModeButtonsEl.classList.remove("hidden");
+    if (mpStatusMsgEl) {
+      mpStatusMsgEl.textContent = "";
+      mpStatusMsgEl.classList.remove("mpConnected");
+    }
   });
 }
 
 // Called once the player picks a character on the selection screen
 function startGame(character) {
-  playerColors = characterColors[character] || characterColors.red;
+  playerColorKey = characterColors[character] ? character : "red";
+  playerColors = characterColors[playerColorKey];
   resetGame();
   gameStarted = true;
   stopGameLoop();

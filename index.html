@@ -27,7 +27,10 @@
       inset: 0;
       display: flex;
       flex-direction: column;
-      justify-content: center;
+      /* flex-start (not center) so overflowing content on short screens
+         scrolls from the top instead of clipping unreachably above the
+         viewport - a known issue with centering overflowed flex content */
+      justify-content: flex-start;
       align-items: center;
       gap: 24px;
       background: #1a1a2e;
@@ -103,6 +106,106 @@
 
     .rules p:last-child {
       margin-bottom: 0;
+    }
+
+    /* ===== ONLINE MULTIPLAYER LOBBY ===== */
+    #mpPanel {
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #mpModeButtons {
+      display: flex;
+      gap: 12px;
+    }
+
+    #mpModeButtons button {
+      font-family: inherit;
+      font-size: 14px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.06);
+      color: white;
+      cursor: pointer;
+    }
+
+    #mpModeButtons button:hover {
+      border-color: white;
+      background: rgba(255, 255, 255, 0.14);
+    }
+
+    .mpBox {
+      width: 100%;
+      box-sizing: border-box;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 14px 18px;
+      text-align: center;
+      font-size: 14px;
+    }
+
+    .mpBox.hidden {
+      display: none;
+    }
+
+    #mpCode {
+      font-size: 28px;
+      letter-spacing: 4px;
+      font-weight: bold;
+      color: #ffd54f;
+    }
+
+    .mpRow {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 8px;
+    }
+
+    #mpCodeInput {
+      font-family: inherit;
+      font-size: 18px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      width: 110px;
+      padding: 8px;
+      border-radius: 6px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      background: rgba(0, 0, 0, 0.3);
+      color: white;
+      text-align: center;
+    }
+
+    .mpRow button {
+      font-family: inherit;
+      font-size: 14px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.08);
+      color: white;
+      cursor: pointer;
+    }
+
+    .mpCancel {
+      border-color: rgba(233, 69, 96, 0.5) !important;
+      background: rgba(233, 69, 96, 0.15) !important;
+    }
+
+    #mpStatusMsg {
+      margin-top: 8px;
+      color: rgba(255, 255, 255, 0.75);
+      min-height: 18px;
+    }
+
+    #mpStatusMsg.mpConnected {
+      color: #81c784;
+      font-weight: bold;
     }
 
     /* ===== GAMEPLAY LAYOUT ===== */
@@ -325,6 +428,33 @@
         Blue
       </button>
     </div>
+
+    <div id="mpPanel">
+      <div id="mpModeButtons">
+        <button id="mpHostBtn" type="button">Host Online Game</button>
+        <button id="mpJoinBtn" type="button">Join Online Game</button>
+      </div>
+
+      <div id="mpHostBox" class="mpBox hidden">
+        <p>Share this code with your friend:</p>
+        <p id="mpCode">-----</p>
+        <div class="mpRow">
+          <button class="mpCancel" id="mpHostCancelBtn" type="button">Cancel</button>
+        </div>
+      </div>
+
+      <div id="mpJoinBox" class="mpBox hidden">
+        <p>Enter your friend's code:</p>
+        <div class="mpRow">
+          <input id="mpCodeInput" maxlength="5" autocomplete="off" placeholder="ABCDE">
+          <button id="mpJoinSubmitBtn" type="button">Connect</button>
+          <button class="mpCancel" id="mpJoinCancelBtn" type="button">Cancel</button>
+        </div>
+      </div>
+
+      <p id="mpStatusMsg"></p>
+    </div>
+
     <div class="rules">
       <p><strong>Desktop:</strong> Arrows = Move | Up = Jump | Down = Crouch (double-tap to lay) | Left-click = Shoot (aim with mouse) | Shift = Reload</p>
       <p><strong>Mobile:</strong> Drag the left joystick to move, jump or crouch. Drag the right joystick to aim and hold it down to fire. Ammo reloads automatically when empty.</p>
@@ -333,6 +463,7 @@
       <p>Every 1500 points, a power-up falls from the sky: a full health refill, +10 ammo, or +20 max health (permanent). Walk into it to grab it.</p>
       <p>Past 3000 points, geese show up at ground level - jump over walking geese and duck (crouch or lay) under low-flying ones, or lose 10 health. You can also just shoot one down in 2 hits.</p>
       <p>Your gun automatically upgrades every 1500 points, rotating between faster fire rate, faster bullets, and an extra bullet per shot.</p>
+      <p>Play online with a friend: one of you hosts and shares the 5-letter code, the other joins with it. You each keep your own health/ammo/score in the same shared world.</p>
     </div>
   </div>
 
@@ -374,6 +505,8 @@
   </div>
 
   <!-- This loads your game logic -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="Multiplayer.js"></script>
   <script src="Game.js"></script>
   <script>
     const characterSelect = document.getElementById("characterSelect");
@@ -387,6 +520,77 @@
 
     document.getElementById("pickRed").addEventListener("click", () => choose("red"));
     document.getElementById("pickBlue").addEventListener("click", () => choose("blue"));
+
+    // ===== Online multiplayer lobby =====
+    const mpModeButtons = document.getElementById("mpModeButtons");
+    const mpHostBtn = document.getElementById("mpHostBtn");
+    const mpJoinBtn = document.getElementById("mpJoinBtn");
+    const mpHostBox = document.getElementById("mpHostBox");
+    const mpJoinBox = document.getElementById("mpJoinBox");
+    const mpCode = document.getElementById("mpCode");
+    const mpCodeInput = document.getElementById("mpCodeInput");
+    const mpJoinSubmitBtn = document.getElementById("mpJoinSubmitBtn");
+    const mpHostCancelBtn = document.getElementById("mpHostCancelBtn");
+    const mpJoinCancelBtn = document.getElementById("mpJoinCancelBtn");
+    const mpStatusMsg = document.getElementById("mpStatusMsg");
+
+    function resetMpUI() {
+      mpHostBox.classList.add("hidden");
+      mpJoinBox.classList.add("hidden");
+      mpModeButtons.classList.remove("hidden");
+      mpStatusMsg.textContent = "";
+      mpStatusMsg.classList.remove("mpConnected");
+    }
+
+    mpHostBtn.addEventListener("click", () => {
+      mpModeButtons.classList.add("hidden");
+      mpHostBox.classList.remove("hidden");
+      mpStatusMsg.textContent = "Setting up lobby...";
+      mpStatusMsg.classList.remove("mpConnected");
+
+      Net.host(
+        (code) => { mpCode.textContent = code; mpStatusMsg.textContent = "Waiting for a player to join..."; },
+        () => { mpStatusMsg.textContent = "Player connected! Pick a character to start."; mpStatusMsg.classList.add("mpConnected"); },
+        (err) => { mpStatusMsg.textContent = "Connection error - try again."; console.error(err); }
+      );
+    });
+
+    mpJoinBtn.addEventListener("click", () => {
+      mpModeButtons.classList.add("hidden");
+      mpJoinBox.classList.remove("hidden");
+      mpStatusMsg.textContent = "";
+      mpCodeInput.focus();
+    });
+
+    mpJoinSubmitBtn.addEventListener("click", () => {
+      const code = mpCodeInput.value.trim();
+      if (code.length !== 5) {
+        mpStatusMsg.textContent = "Enter the 5-letter code.";
+        return;
+      }
+      mpStatusMsg.textContent = "Connecting...";
+      mpStatusMsg.classList.remove("mpConnected");
+
+      Net.join(
+        code,
+        () => { mpStatusMsg.textContent = "Connected! Pick a character to start."; mpStatusMsg.classList.add("mpConnected"); },
+        (err) => { mpStatusMsg.textContent = "Couldn't connect - check the code and try again."; console.error(err); }
+      );
+    });
+
+    mpCodeInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") mpJoinSubmitBtn.click();
+    });
+
+    mpHostCancelBtn.addEventListener("click", () => {
+      Net.disconnect();
+      resetMpUI();
+    });
+
+    mpJoinCancelBtn.addEventListener("click", () => {
+      Net.disconnect();
+      resetMpUI();
+    });
   </script>
 </body>
 </html>
