@@ -80,8 +80,9 @@ window.addEventListener("mouseleave", () => {
 });
 
 let manualAimDir = null; // unit vector set while the mobile aim stick is actively deflected
-let autoFireTimer = 0; // cooldown between auto-fired shots while the aim stick is held
-const autoFireRate = 10; // frames between auto-fired shots
+let aimStickHeld = false; // true while a finger is down on the aim stick
+let aimFireTimer = 0; // cooldown between shots while the aim stick is held
+const aimFireRate = 10; // frames between shots while held
 
 function getAimTarget(p) {
   if (manualAimDir) {
@@ -148,25 +149,6 @@ function getAimAngle(p) {
   }
 
   return angle;
-}
-
-// Is the current aim angle lined up with a live bird? Used for mobile
-// auto-fire: the gun fires on its own once the aim stick points at one.
-const autoAimTolerance = 0.08; // radians (~4.5 degrees)
-
-function isAimedAtBird(p, angle) {
-  const originX = p.x + p.width / 2;
-  const originY = p.y + p.height / 2;
-
-  for (const bird of birds) {
-    if (!bird.alive || bird.dying) continue;
-    const birdAngle = Math.atan2(bird.y - originY, bird.x - originX);
-    let diff = Math.abs(birdAngle - angle);
-    if (diff > Math.PI) diff = Math.PI * 2 - diff;
-    if (diff < autoAimTolerance) return true;
-  }
-
-  return false;
 }
 
 // ===== BIRDS =====
@@ -415,8 +397,8 @@ if (joystickBase && joystickThumb) {
   joystickBase.addEventListener("touchcancel", endJoystickTouch, { passive: false });
 }
 
-// Aim stick: drag to aim. There is no fire button - the gun auto-fires
-// (see autoFire() in update()) whenever this aim lines up with a bird.
+// Aim stick: drag to aim, hold it down to fire continuously in that
+// direction (see the aimStickHeld check in update()). No separate fire button.
 const aimStickBase = document.getElementById("aimStickBase");
 const aimStickThumb = document.getElementById("aimStickThumb");
 if (aimStickBase && aimStickThumb) {
@@ -457,6 +439,7 @@ if (aimStickBase && aimStickThumb) {
     aimCenterX = rect.left + rect.width / 2;
     aimCenterY = rect.top + rect.height / 2;
     aimTouchId = e.changedTouches[0].identifier;
+    aimStickHeld = true;
     updateAimStick(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
   }, { passive: false });
 
@@ -475,6 +458,7 @@ if (aimStickBase && aimStickThumb) {
     e.preventDefault();
 
     aimTouchId = null;
+    aimStickHeld = false;
     aimStickThumb.style.transform = "translate(0, 0)";
     manualAimDir = null;
   };
@@ -518,12 +502,12 @@ function shoot() {
 function update() {
   if (gameOver) return;
 
-  // Mobile auto-fire: while actively aiming with the aim stick, shoot on
-  // its own whenever the gun lines up with a bird.
-  if (autoFireTimer > 0) autoFireTimer--;
-  if (manualAimDir && autoFireTimer <= 0 && isAimedAtBird(player, getAimAngle(player))) {
+  // Mobile: holding the aim stick fires continuously in whatever direction
+  // it's pointed.
+  if (aimFireTimer > 0) aimFireTimer--;
+  if (aimStickHeld && aimFireTimer <= 0) {
     shoot();
-    autoFireTimer = autoFireRate;
+    aimFireTimer = aimFireRate;
   }
 
   // Horizontal movement
@@ -829,7 +813,14 @@ function draw() {
     // Gun
     ctx.save();
     ctx.translate(gunX, gunY);
-    ctx.rotate(aimAngle);
+    if (facing === -1) {
+      // Mirror instead of rotating straight through 180deg, so the grip/
+      // trigger guard stay below the barrel instead of flipping on top of it.
+      ctx.rotate(aimAngle + Math.PI);
+      ctx.scale(-1, 1);
+    } else {
+      ctx.rotate(aimAngle);
+    }
 
     ctx.fillStyle = "#333";
     ctx.fillRect(0, -6, 55, 14);
