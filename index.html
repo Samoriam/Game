@@ -110,12 +110,21 @@
     #statBar {
       flex: 0 0 auto;
       display: flex;
+      flex-wrap: wrap;
       justify-content: center;
-      gap: 24px;
+      gap: 10px 24px;
       padding: 8px 10px;
       background: rgba(0, 0, 0, 0.55);
       font-size: 15px;
       z-index: 2;
+    }
+
+    #buffs {
+      color: #ffd54f;
+    }
+
+    #buffs:empty {
+      display: none;
     }
 
     #canvasWrapper {
@@ -245,14 +254,16 @@
       <p><strong>Desktop:</strong> Arrows = Move | Up = Jump | Down = Crouch (double-tap to lay) | Left-click = Shoot (aim with mouse) | Shift = Reload</p>
       <p><strong>Mobile:</strong> Drag the left joystick to move, jump or crouch. Drag the right joystick to aim and hold it down to fire. Ammo reloads automatically when empty.</p>
       <p>Watch for red birds - shooting one enrages it and it attacks! Shoot it again to finish it off. Each hit costs 10% health.</p>
+      <p>Purple birds are rare - shoot one twice and it drops a power-up (protective bubble, triple ammo or rapid fire). Walk into it to activate it. It lasts 30s, or disappears after 20s if not picked up.</p>
     </div>
   </div>
 
   <div id="gameArea" class="hidden">
     <div id="statBar">
-      <span>Ammo: <span id="ammo">40</span>/40</span>
+      <span>Ammo: <span id="ammo">40</span>/<span id="maxAmmoDisplay">40</span></span>
       <span>Health: <span id="health">100</span>%</span>
       <span>Score: <span id="score">0</span></span>
+      <span id="buffs"></span>
     </div>
 
     <div id="canvasWrapper">

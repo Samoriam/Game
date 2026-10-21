@@ -1,8 +1,10 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const ammoDisplay = document.getElementById("ammo");
+const maxAmmoDisplay = document.getElementById("maxAmmoDisplay");
 const healthDisplay = document.getElementById("health");
 const scoreDisplay = document.getElementById("score");
+const buffsDisplay = document.getElementById("buffs");
 
 // ===== CHARACTER COLORS =====
 const characterColors = {
@@ -38,6 +40,7 @@ const redBirdAttackCooldown = 60; // frames of player invincibility between atta
 const redBirdMaxHp = 3; // shots needed to kill a red bird
 const redBirdRetreatSpeed = 4;
 const redBirdRetreatTime = 90; // frames the bird backs off after landing a hit, giving the player room to shoot back
+const purpleBirdMaxHp = 2; // shots needed to kill a purple bird
 let gameOver = false;
 
 // ===== SCORE =====
@@ -45,13 +48,19 @@ let score = 0;
 const birdPoints = 100;
 const redBirdPoints = 200;
 const redBirdKillBonus = 100;
+const purpleBirdPoints = 150;
 
 // ===== GUN & AMMO =====
 let ammo = 40;
-const maxAmmo = 40;
+const maxAmmo = 40; // base cap - see effectiveMaxAmmo() for the triple-ammo buff
 let isReloading = false;
 let reloadTimer = 0;
 const reloadTime = 90;
+
+function updateAmmoDisplay() {
+  ammoDisplay.textContent = ammo;
+  if (maxAmmoDisplay) maxAmmoDisplay.textContent = effectiveMaxAmmo();
+}
 
 // ===== BULLETS =====
 const bullets = [];
@@ -60,6 +69,51 @@ const mobileBulletSpeedMultiplier = 1.6;
 
 // ===== EXPLOSIONS =====
 const explosions = [];
+
+// ===== POWER-UPS =====
+// Purple birds (rare, 2 hits to kill) drop one of these on death. Walk into
+// a dropped power-up to activate it; uncollected drops disappear after
+// powerUpLifetime, and an activated effect lasts powerUpDuration.
+const powerUps = [];
+const powerUpTypes = ["bubble", "tripleAmmo", "rapidFire"];
+const powerUpLifetime = 20 * 60; // 20s before an uncollected drop disappears
+const powerUpDuration = 30 * 60; // 30s active effect once picked up
+const powerUpPickupRadius = 36;
+const powerUpGroundY = 490;
+
+let shieldTimer = 0;
+let tripleAmmoTimer = 0;
+let rapidFireTimer = 0;
+
+function spawnPowerUp(x) {
+  const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+  powerUps.push({ x, y: powerUpGroundY, type, life: powerUpLifetime, bob: Math.random() * Math.PI * 2 });
+}
+
+function effectiveMaxAmmo() {
+  return tripleAmmoTimer > 0 ? maxAmmo * 3 : maxAmmo;
+}
+
+function activatePowerUp(type) {
+  if (type === "bubble") {
+    shieldTimer = powerUpDuration;
+  } else if (type === "tripleAmmo") {
+    tripleAmmoTimer = powerUpDuration;
+    ammo = effectiveMaxAmmo();
+    updateAmmoDisplay();
+  } else if (type === "rapidFire") {
+    rapidFireTimer = powerUpDuration;
+  }
+}
+
+function updateBuffsDisplay() {
+  if (!buffsDisplay) return;
+  const parts = [];
+  if (shieldTimer > 0) parts.push(`Shield ${Math.ceil(shieldTimer / 60)}s`);
+  if (tripleAmmoTimer > 0) parts.push(`3x Ammo ${Math.ceil(tripleAmmoTimer / 60)}s`);
+  if (rapidFireTimer > 0) parts.push(`Rapid Fire ${Math.ceil(rapidFireTimer / 60)}s`);
+  buffsDisplay.textContent = parts.join(" | ");
+}
 
 // ===== AIMING =====
 const mouse = {
@@ -80,9 +134,15 @@ window.addEventListener("mouseleave", () => {
 });
 
 let manualAimDir = null; // unit vector set while the mobile aim stick is actively deflected
-let aimStickHeld = false; // true while a finger is down on the aim stick
-let aimFireTimer = 0; // cooldown between shots while the aim stick is held
-const aimFireRate = 10; // frames between shots while held
+
+// Hold-to-fire, shared by desktop left-click and the mobile aim stick
+let fireHeld = false;
+let fireCooldown = 0;
+const baseFireRate = 10; // frames between repeated shots while held
+
+function currentFireRate() {
+  return rapidFireTimer > 0 ? Math.max(3, Math.round(baseFireRate / 2)) : baseFireRate;
+}
 
 function getAimTarget(p) {
   if (manualAimDir) {
@@ -156,12 +216,18 @@ const birds = [];
 const maxBirds = 7;
 let birdSpawnTimer = 0;
 
+const purpleBirdSpawnChance = 0.05; // rare
+const redBirdSpawnChance = 0.2;
+
 function spawnBird() {
   const fromLeft = Math.random() < 0.5;
   const x = fromLeft ? -40 : canvas.width + 40;
   const y = 50 + Math.random() * 180;
   const speed = 1.5 + Math.random() * 2.5;
-  const isExploding = Math.random() < 0.2;
+
+  const typeRoll = Math.random();
+  const isPurple = typeRoll < purpleBirdSpawnChance;
+  const isExploding = !isPurple && typeRoll < purpleBirdSpawnChance + redBirdSpawnChance;
 
   birds.push({
     x,
@@ -172,9 +238,10 @@ function spawnBird() {
     phase: Math.random() * Math.PI * 2,
     alive: true,
     isExploding,
+    isPurple,
     dying: false,
     attacking: false,
-    hp: isExploding ? redBirdMaxHp : 1,
+    hp: isExploding ? redBirdMaxHp : (isPurple ? purpleBirdMaxHp : 1),
     retreatTimer: 0,
     fallVy: 0,
     rotation: 0
@@ -186,8 +253,8 @@ function drawBird(bird) {
 
   const direction = bird.vx >= 0 ? 1 : -1;
   const wingLift = Math.sin(time * 0.18 + bird.phase) * 8;
-  const bodyColor = bird.isExploding ? "#8b1a1a" : "#2d2d2d";
-  const wingColor = bird.isExploding ? "#5c0f0f" : "#171717";
+  const bodyColor = bird.isExploding ? "#8b1a1a" : bird.isPurple ? "#6a1b9a" : "#2d2d2d";
+  const wingColor = bird.isExploding ? "#5c0f0f" : bird.isPurple ? "#4a0f72" : "#171717";
 
   ctx.save();
   ctx.translate(bird.x, bird.y);
@@ -226,16 +293,17 @@ function drawBird(bird) {
 
   ctx.restore();
 
-  if (bird.isExploding && bird.attacking && !bird.dying) {
+  const maxHpForBird = bird.isExploding ? redBirdMaxHp : (bird.isPurple ? purpleBirdMaxHp : 1);
+  if (!bird.dying && maxHpForBird > 1 && bird.hp < maxHpForBird) {
     const barWidth = 30;
     const barHeight = 5;
     const barX = bird.x - barWidth / 2;
     const barY = bird.y - 22;
-    const hpFraction = Math.max(bird.hp, 0) / redBirdMaxHp;
+    const hpFraction = Math.max(bird.hp, 0) / maxHpForBird;
 
     ctx.fillStyle = "#333";
     ctx.fillRect(barX, barY, barWidth, barHeight);
-    ctx.fillStyle = "#ff3b3b";
+    ctx.fillStyle = bird.isPurple ? "#b266ff" : "#ff3b3b";
     ctx.fillRect(barX, barY, barWidth * hpFraction, barHeight);
   }
 }
@@ -264,7 +332,7 @@ window.addEventListener("keydown", e => {
   }
 
   // Reload with Shift
-  if (key === "shift" && !isReloading && ammo < maxAmmo) {
+  if (key === "shift" && !isReloading && ammo < effectiveMaxAmmo()) {
     isReloading = true;
     reloadTimer = reloadTime;
   }
@@ -292,9 +360,7 @@ function registerDownPress() {
   lastDownTime = now;
 }
 
-// ===== DESKTOP: left-click to shoot =====
-let clickFireInterval = null;
-
+// ===== DESKTOP: left-click (hold) to shoot =====
 canvas.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   if (!gameStarted) return;
@@ -304,16 +370,14 @@ canvas.addEventListener("mousedown", (e) => {
     return;
   }
 
+  fireHeld = true;
   shoot();
-  clickFireInterval = setInterval(shoot, 120);
+  fireCooldown = currentFireRate();
 });
 
 window.addEventListener("mouseup", (e) => {
   if (e.button !== 0) return;
-  if (clickFireInterval) {
-    clearInterval(clickFireInterval);
-    clickFireInterval = null;
-  }
+  fireHeld = false;
 });
 
 // ===== TOUCH CONTROLS (mobile) =====
@@ -398,7 +462,8 @@ if (joystickBase && joystickThumb) {
 }
 
 // Aim stick: drag to aim, hold it down to fire continuously in that
-// direction (see the aimStickHeld check in update()). No separate fire button.
+// direction (shares the fireHeld hold-to-fire logic in update() with
+// desktop's left-click). No separate fire button.
 const aimStickBase = document.getElementById("aimStickBase");
 const aimStickThumb = document.getElementById("aimStickThumb");
 if (aimStickBase && aimStickThumb) {
@@ -439,8 +504,11 @@ if (aimStickBase && aimStickThumb) {
     aimCenterX = rect.left + rect.width / 2;
     aimCenterY = rect.top + rect.height / 2;
     aimTouchId = e.changedTouches[0].identifier;
-    aimStickHeld = true;
     updateAimStick(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+
+    fireHeld = true;
+    shoot();
+    fireCooldown = currentFireRate();
   }, { passive: false });
 
   aimStickBase.addEventListener("touchmove", (e) => {
@@ -458,7 +526,7 @@ if (aimStickBase && aimStickThumb) {
     e.preventDefault();
 
     aimTouchId = null;
-    aimStickHeld = false;
+    fireHeld = false;
     aimStickThumb.style.transform = "translate(0, 0)";
     manualAimDir = null;
   };
@@ -477,7 +545,7 @@ function shoot() {
   if (isReloading || ammo <= 0) return;
 
   ammo--;
-  ammoDisplay.textContent = ammo;
+  updateAmmoDisplay();
 
   const angle = getAimAngle(player);
   const muzzle = getMuzzlePosition(player, angle);
@@ -502,12 +570,33 @@ function shoot() {
 function update() {
   if (gameOver) return;
 
-  // Mobile: holding the aim stick fires continuously in whatever direction
-  // it's pointed.
-  if (aimFireTimer > 0) aimFireTimer--;
-  if (aimStickHeld && aimFireTimer <= 0) {
+  // Hold-to-fire: desktop left-click or the mobile aim stick
+  if (fireCooldown > 0) fireCooldown--;
+  if (fireHeld && fireCooldown <= 0) {
     shoot();
-    aimFireTimer = aimFireRate;
+    fireCooldown = currentFireRate();
+  }
+
+  // Power-up buff timers
+  if (shieldTimer > 0) shieldTimer--;
+  if (tripleAmmoTimer > 0) tripleAmmoTimer--;
+  if (rapidFireTimer > 0) rapidFireTimer--;
+  updateBuffsDisplay();
+
+  // Power-up pickups on the ground
+  for (let i = powerUps.length - 1; i >= 0; i--) {
+    const pu = powerUps[i];
+    pu.life--;
+    if (pu.life <= 0) {
+      powerUps.splice(i, 1);
+      continue;
+    }
+
+    const dist = Math.hypot((player.x + player.width / 2) - pu.x, player.y - pu.y);
+    if (dist < powerUpPickupRadius) {
+      activatePowerUp(pu.type);
+      powerUps.splice(i, 1);
+    }
   }
 
   // Horizontal movement
@@ -590,7 +679,15 @@ function update() {
           bird.dying = true;
           bird.attacking = false;
           bird.fallVy = -3;
-          score += bird.isExploding ? redBirdKillBonus : birdPoints;
+
+          if (bird.isExploding) {
+            score += redBirdKillBonus;
+          } else if (bird.isPurple) {
+            score += purpleBirdPoints;
+            spawnPowerUp(bird.x);
+          } else {
+            score += birdPoints;
+          }
         }
         scoreDisplay.textContent = score;
 
@@ -646,15 +743,18 @@ function update() {
       bird.y += (dy / dist) * redBirdChaseSpeed;
 
       if (dist < redBirdAttackRange && player.invincible <= 0) {
-        health -= redBirdDamage;
-        if (health < 0) health = 0;
-        healthDisplay.textContent = health;
         player.invincible = redBirdAttackCooldown;
         bird.retreatTimer = redBirdRetreatTime;
         explosions.push({ x: player.x, y: player.y - 30, radius: 6, life: 20 });
 
-        if (health <= 0) {
-          gameOver = true;
+        if (shieldTimer <= 0) {
+          health -= redBirdDamage;
+          if (health < 0) health = 0;
+          healthDisplay.textContent = health;
+
+          if (health <= 0) {
+            gameOver = true;
+          }
         }
       }
       continue;
@@ -682,8 +782,8 @@ function update() {
     reloadTimer--;
     if (reloadTimer <= 0) {
       isReloading = false;
-      ammo = maxAmmo;
-      ammoDisplay.textContent = ammo;
+      ammo = effectiveMaxAmmo();
+      updateAmmoDisplay();
     }
   }
 }
@@ -841,9 +941,44 @@ function draw() {
     drawBird(bird);
   }
 
+  // Draw power-up pickups on the ground
+  const powerUpColors = { bubble: "#4fc3f7", tripleAmmo: "#ffb300", rapidFire: "#ffee58" };
+  const powerUpLabels = { bubble: "SH", tripleAmmo: "x3", rapidFire: "RF" };
+  for (const pu of powerUps) {
+    const bobY = pu.y + Math.sin(time * 0.1 + pu.bob) * 4;
+    ctx.globalAlpha = pu.life < 180 ? Math.max(pu.life / 180, 0.2) : 1;
+
+    ctx.fillStyle = powerUpColors[pu.type];
+    ctx.beginPath();
+    ctx.arc(pu.x, bobY, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = "#000";
+    ctx.font = "bold 10px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(powerUpLabels[pu.type], pu.x, bobY + 3);
+    ctx.textAlign = "left";
+
+    ctx.globalAlpha = 1;
+  }
+
   // Draw the player (blink while invincible after taking a hit)
   if (player.invincible <= 0 || Math.floor(time / 4) % 2 === 0) {
     drawPlayer(player, playerColors);
+  }
+
+  // Draw the protective bubble shield
+  if (shieldTimer > 0) {
+    ctx.strokeStyle = "rgba(79, 195, 247, 0.8)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y - 20, 55, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(79, 195, 247, 0.12)";
+    ctx.fill();
   }
 
   // Draw bullets
@@ -910,11 +1045,17 @@ function resetGame() {
   healthDisplay.textContent = health;
   score = 0;
   scoreDisplay.textContent = score;
-  ammo = maxAmmo;
-  ammoDisplay.textContent = ammo;
   isReloading = false;
   reloadTimer = 0;
   gameOver = false;
+
+  shieldTimer = 0;
+  tripleAmmoTimer = 0;
+  rapidFireTimer = 0;
+  updateBuffsDisplay();
+
+  ammo = effectiveMaxAmmo();
+  updateAmmoDisplay();
 
   player.x = 300;
   player.y = 450;
@@ -926,4 +1067,5 @@ function resetGame() {
   bullets.length = 0;
   birds.length = 0;
   explosions.length = 0;
+  powerUps.length = 0;
 }
