@@ -422,8 +422,8 @@ function drawBird(bird) {
 // ===== GEESE =====
 // Ground-level hazards that start appearing once the player has scored
 // enough. Walking geese have to be jumped over; low-flying geese have to
-// be ducked under (crouch or lay down). They aren't shootable - pure
-// dodge obstacles.
+// be ducked under (crouch or lay down) - or the player can just shoot one
+// down instead, in 2 hits.
 const geese = [];
 const maxGeese = 2;
 let gooseSpawnTimer = 0;
@@ -433,19 +433,24 @@ const gooseHitCooldown = 60;
 const gooseCollisionRangeX = 26;
 const gooseWalkingY = 495;
 const gooseFlyingY = 430;
+const gooseMaxHp = 2;
+const goosePoints = 100;
+const gooseHitboxWidth = 36;
+const gooseHitboxHeight = 22;
 
 function spawnGoose() {
   const fromLeft = Math.random() < 0.5;
   const x = fromLeft ? -30 : canvas.width + 30;
   const flying = Math.random() < 0.5;
-  const speed = (1 + Math.random() * 1) * birdSpeedMultiplier();
+  const speed = (0.6 + Math.random() * 0.6) * birdSpeedMultiplier();
 
   geese.push({
     x,
     y: flying ? gooseFlyingY : gooseWalkingY,
     flying,
     vx: (fromLeft ? 1 : -1) * speed,
-    phase: Math.random() * Math.PI * 2
+    phase: Math.random() * Math.PI * 2,
+    hp: gooseMaxHp
   });
 }
 
@@ -506,6 +511,19 @@ function drawGoose(goose) {
   }
 
   ctx.restore();
+
+  if (goose.hp < gooseMaxHp) {
+    const barWidth = 28;
+    const barHeight = 5;
+    const barX = goose.x - barWidth / 2;
+    const barY = goose.y - 34;
+    const hpFraction = Math.max(goose.hp, 0) / gooseMaxHp;
+
+    ctx.fillStyle = "#333";
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+    ctx.fillStyle = "#ff3b3b";
+    ctx.fillRect(barX, barY, barWidth * hpFraction, barHeight);
+  }
 }
 
 // ===== KEYS & DOUBLE TAP =====
@@ -885,6 +903,8 @@ function update() {
       continue;
     }
 
+    let bulletConsumed = false;
+
     for (let j = birds.length - 1; j >= 0; j--) {
       const bird = birds[j];
       if (!bird.alive || bird.dying) continue;
@@ -919,6 +939,33 @@ function update() {
           }
         }
         scoreDisplay.textContent = score;
+
+        bullets.splice(i, 1);
+        bulletConsumed = true;
+        break;
+      }
+    }
+
+    if (bulletConsumed) continue;
+
+    for (let j = geese.length - 1; j >= 0; j--) {
+      const goose = geese[j];
+
+      const hitGoose =
+        bullets[i].x > goose.x - gooseHitboxWidth / 2 &&
+        bullets[i].x < goose.x + gooseHitboxWidth / 2 &&
+        bullets[i].y > goose.y - gooseHitboxHeight / 2 &&
+        bullets[i].y < goose.y + gooseHitboxHeight / 2;
+
+      if (hitGoose) {
+        goose.hp--;
+
+        if (goose.hp <= 0) {
+          explosions.push({ x: goose.x, y: goose.y, radius: 4, life: 15 });
+          geese.splice(j, 1);
+          score += goosePoints;
+          scoreDisplay.textContent = score;
+        }
 
         bullets.splice(i, 1);
         break;
