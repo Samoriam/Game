@@ -58,6 +58,56 @@ function getChaseTarget(bird) {
   return localTarget;
 }
 
+function inMultiplayerMatch() {
+  return !!remotePlayer || Net.isConnected();
+}
+
+// ===== 2-PLAYER MATCH: race to winScore, or whoever's ahead when both die =====
+const winScore = 7000;
+let matchOver = false;
+
+// Called whenever the LOCAL player's health hits 0. In solo play this ends
+// the game immediately, same as always. In multiplayer, dying doesn't end
+// anything by itself - the player lies down and keeps spectating until
+// checkMatchEnd() decides the match is actually over.
+function killLocalPlayer() {
+  if (gameOver) return;
+  gameOver = true;
+  player.state = "laying";
+  checkHighScore();
+
+  if (!inMultiplayerMatch()) {
+    showGameOverOverlay();
+  }
+}
+
+// "win" | "lose" | "tie" | null (null = not a multiplayer match)
+function getMatchOutcome() {
+  if (!remotePlayer) return null;
+
+  const iReachedWinScore = score >= winScore;
+  const theyReachedWinScore = remotePlayer.score >= winScore;
+
+  if (iReachedWinScore && !theyReachedWinScore) return "win";
+  if (theyReachedWinScore && !iReachedWinScore) return "lose";
+
+  if (score > remotePlayer.score) return "win";
+  if (score < remotePlayer.score) return "lose";
+  return "tie";
+}
+
+function checkMatchEnd() {
+  if (matchOver || !remotePlayer) return;
+
+  const reachedWinScore = score >= winScore || remotePlayer.score >= winScore;
+  const bothDown = gameOver && remotePlayer.gameOver;
+
+  if (reachedWinScore || bothDown) {
+    matchOver = true;
+    showGameOverOverlay();
+  }
+}
+
 // ===== PLAYER =====
 const player = {
   x: 300,
@@ -663,12 +713,22 @@ Net.on("pickup", (data) => {
   if (index !== -1) powerUps.splice(index, 1);
 });
 
+Net.on("rematch", () => resetGame());
+
 Net.on("disconnected", () => {
+  const wasSpectating = gameOver && !matchOver;
   remotePlayer = null;
   if (p2ScoreLine) p2ScoreLine.classList.add("hidden");
   // A guest who loses the host's feed falls back to simulating its own
   // world from here (simulatingWorld() becomes true once the role clears).
   Net.disconnect();
+
+  // Nothing left to spectate - let a dead/spectating player see the
+  // end screen instead of staying stuck watching an empty game
+  if (wasSpectating) {
+    matchOver = true;
+    showGameOverOverlay();
+  }
 });
 
 // ===== KEYS & DOUBLE TAP =====
@@ -937,13 +997,20 @@ function shoot() {
 
 // ===== UPDATE =====
 function update() {
-  if (gameOver) return;
+  // In multiplayer, dying doesn't stop the world: a dead player keeps
+  // spectating (world simulation and the other player keep going) until
+  // the match actually concludes. Solo death still stops everything.
+  if (matchOver) return;
+  if (gameOver && !inMultiplayerMatch()) return;
+  const amAlive = !gameOver;
 
   // Hold-to-fire: desktop left-click or the mobile aim stick
-  if (fireCooldown > 0) fireCooldown--;
-  if (fireHeld && fireCooldown <= 0) {
-    shoot();
-    fireCooldown = currentFireRate();
+  if (amAlive) {
+    if (fireCooldown > 0) fireCooldown--;
+    if (fireHeld && fireCooldown <= 0) {
+      shoot();
+      fireCooldown = currentFireRate();
+    }
   }
 
   // Power-up buff timers
@@ -986,7 +1053,7 @@ function update() {
       }
     }
 
-    const dist = Math.hypot((player.x + player.width / 2) - pu.x, player.y - pu.y);
+    const dist = amAlive ? Math.hypot((player.x + player.width / 2) - pu.x, player.y - pu.y) : Infinity;
     if (dist < powerUpPickupRadius) {
       if (pu.kind === "buff") {
         activatePowerUp(pu.type);
@@ -998,6 +1065,9 @@ function update() {
     }
   }
 
+  // Movement, bullets and bullet collision only run for a living local
+  // player - a dead/spectating player stays frozen where they fell
+  if (amAlive) {
   // Horizontal movement
   if (keys["arrowleft"] && !keys["arrowright"]) {
     player.x -= player.speed;
@@ -1102,6 +1172,7 @@ function update() {
       }
     }
   }
+  } // end amAlive (movement/bullets)
 
   // Bird population and flight (world-simulating side only - a connected
   // guest mirrors the host's bird positions instead of spawning/moving its
@@ -1162,7 +1233,10 @@ function update() {
       }
 
       // Every client checks this attacking bird against its OWN local player
-      const localDist = Math.hypot((player.x + player.width / 2) - bird.x, player.y - bird.y);
+      // (only while that player is alive)
+      const localDist = amAlive
+        ? Math.hypot((player.x + player.width / 2) - bird.x, player.y - bird.y)
+        : Infinity;
       if (localDist < redBirdAttackRange && player.invincible <= 0) {
         player.invincible = redBirdAttackCooldown;
         explosions.push({ x: player.x, y: player.y - 30, radius: 6, life: 20 });
@@ -1179,9 +1253,7 @@ function update() {
           updateHealthDisplay();
 
           if (health <= 0) {
-            gameOver = true;
-            checkHighScore();
-            showGameOverOverlay();
+            killLocalPlayer();
           }
         }
       }
@@ -1221,7 +1293,7 @@ function update() {
       }
     }
 
-    const withinX = Math.abs((player.x + player.width / 2) - goose.x) < gooseCollisionRangeX;
+    const withinX = amAlive && Math.abs((player.x + player.width / 2) - goose.x) < gooseCollisionRangeX;
     if (withinX && player.invincible <= 0) {
       const avoided = goose.flying
         ? (player.state === "crouching" || player.state === "laying")
@@ -1237,9 +1309,7 @@ function update() {
           updateHealthDisplay();
 
           if (health <= 0) {
-            gameOver = true;
-            checkHighScore();
-            showGameOverOverlay();
+            killLocalPlayer();
           }
         }
       }
@@ -1256,7 +1326,7 @@ function update() {
   }
 
   // Reload
-  if (isReloading) {
+  if (amAlive && isReloading) {
     reloadTimer--;
     if (reloadTimer <= 0) {
       isReloading = false;
@@ -1292,6 +1362,8 @@ function update() {
       }
     }
   }
+
+  checkMatchEnd();
 }
 
 // ===== DRAW =====
@@ -1305,7 +1377,7 @@ function draw() {
   ctx.fillRect(0, 500, canvas.width, canvas.height);
 
   // Helper to draw the player
-  function drawPlayer(p, colors, overrideAimAngle) {
+  function drawPlayer(p, colors, overrideAimAngle, isDown) {
     const sway = Math.sin(time * 0.05) * 3;
     const bob = Math.sin(time * 0.08) * 2;
     // A remote player's aim comes from the network instead of local
@@ -1313,6 +1385,15 @@ function draw() {
     // would also overwrite p.facing) is skipped when an angle is supplied.
     const aimAngle = overrideAimAngle !== undefined ? overrideAimAngle : getAimAngle(p);
     const facing = p.facing;
+
+    // A downed player (health hit 0) lies flat on the grass instead of
+    // standing - rotate the whole figure onto its side around its feet.
+    if (isDown) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate((facing >= 0 ? 1 : -1) * Math.PI / 2);
+      ctx.translate(-p.x, -p.y);
+    }
 
     const isCrouch = p.state === "crouching";
     const legStartY = p.y + (isCrouch ? 45 : 40) + bob;
@@ -1443,6 +1524,10 @@ function draw() {
     ctx.arc(18, 10, 6, 0, Math.PI);
     ctx.stroke();
     ctx.restore();
+
+    if (isDown) {
+      ctx.restore();
+    }
   }
 
   // Draw birds in the sky
@@ -1485,20 +1570,22 @@ function draw() {
     ctx.globalAlpha = 1;
   }
 
-  // Draw the player (blink while invincible after taking a hit)
-  if (player.invincible <= 0 || Math.floor(time / 4) % 2 === 0) {
-    drawPlayer(player, playerColors);
+  // Draw the player (blink while invincible after taking a hit; a downed
+  // player stays fully visible, lying on the grass, instead of blinking)
+  if (gameOver || player.invincible <= 0 || Math.floor(time / 4) % 2 === 0) {
+    drawPlayer(player, playerColors, undefined, gameOver);
   }
 
-  // Draw the other player, if connected
-  if (otherPlayerAvailable()) {
+  // Draw the other player, if connected - including while they're down, so
+  // a spectating player can still see them lying on the grass
+  if (remotePlayer) {
     const remoteColors = characterColors[remotePlayer.color] || characterColors.blue;
-    drawPlayer(remotePlayer, remoteColors, remotePlayer.aimAngle);
+    drawPlayer(remotePlayer, remoteColors, remotePlayer.aimAngle, remotePlayer.gameOver);
 
     ctx.fillStyle = "#fff";
     ctx.font = "bold 12px Arial";
     ctx.textAlign = "center";
-    ctx.fillText("P2", remotePlayer.x, remotePlayer.y - 95);
+    ctx.fillText(remotePlayer.gameOver ? "P2 (down)" : "P2", remotePlayer.x, remotePlayer.y - 95);
     ctx.textAlign = "left";
   }
 
@@ -1573,6 +1660,7 @@ const gameOverOverlay = document.getElementById("gameOverOverlay");
 const finalScoreDisplay = document.getElementById("finalScore");
 const finalHighScoreDisplay = document.getElementById("finalHighScore");
 const finalVsLine = document.getElementById("finalVsLine");
+const gameOverHeading = document.getElementById("gameOverHeading");
 const replayBtn = document.getElementById("replayBtn");
 const exitBtn = document.getElementById("exitBtn");
 const characterSelectEl = document.getElementById("characterSelect");
@@ -1582,20 +1670,29 @@ function showGameOverOverlay() {
   if (finalScoreDisplay) finalScoreDisplay.textContent = score;
   if (finalHighScoreDisplay) finalHighScoreDisplay.textContent = highScore;
 
+  const outcome = getMatchOutcome();
+
+  if (gameOverHeading) {
+    gameOverHeading.classList.remove("winning", "losing");
+    if (outcome === "win") {
+      gameOverHeading.textContent = "You Win!";
+      gameOverHeading.classList.add("winning");
+    } else if (outcome === "lose") {
+      gameOverHeading.textContent = "You Lose";
+      gameOverHeading.classList.add("losing");
+    } else if (outcome === "tie") {
+      gameOverHeading.textContent = "Tie Game!";
+    } else {
+      gameOverHeading.textContent = "Game Over";
+    }
+  }
+
   if (finalVsLine) {
     if (remotePlayer) {
-      const diff = score - remotePlayer.score;
       finalVsLine.classList.remove("hidden", "winning", "losing");
-
-      if (diff > 0) {
-        finalVsLine.textContent = `You're ahead of P2 (${remotePlayer.score}) by ${diff}!`;
-        finalVsLine.classList.add("winning");
-      } else if (diff < 0) {
-        finalVsLine.textContent = `P2 is ahead with ${remotePlayer.score} - you need ${-diff} more`;
-        finalVsLine.classList.add("losing");
-      } else {
-        finalVsLine.textContent = `Tied with P2 at ${remotePlayer.score}!`;
-      }
+      finalVsLine.textContent = `Final: You ${score} - P2 ${remotePlayer.score}`;
+      if (outcome === "win") finalVsLine.classList.add("winning");
+      else if (outcome === "lose") finalVsLine.classList.add("losing");
     } else {
       finalVsLine.classList.add("hidden");
     }
@@ -1605,7 +1702,10 @@ function showGameOverOverlay() {
 }
 
 if (replayBtn) {
-  replayBtn.addEventListener("click", () => resetGame());
+  replayBtn.addEventListener("click", () => {
+    if (Net.isConnected()) Net.send("rematch", {});
+    resetGame();
+  });
 }
 
 if (exitBtn) {
@@ -1655,6 +1755,7 @@ function resetGame() {
   isReloading = false;
   reloadTimer = 0;
   gameOver = false;
+  matchOver = false;
   if (gameOverOverlay) gameOverOverlay.classList.add("hidden");
 
   gunUpgradeTier = 0;

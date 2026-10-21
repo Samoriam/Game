@@ -275,6 +275,14 @@
       font-size: 32px;
     }
 
+    #gameOverHeading.winning {
+      color: #81c784;
+    }
+
+    #gameOverHeading.losing {
+      color: #e57373;
+    }
+
     .gameOverPanel p {
       margin: 4px 0;
       font-size: 16px;
@@ -484,7 +492,7 @@
       <p>Every 1500 points, a power-up falls from the sky: a full health refill, +10 ammo, or +20 max health (permanent). Walk into it to grab it.</p>
       <p>Past 3000 points, geese show up at ground level - jump over walking geese and duck (crouch or lay) under low-flying ones, or lose 10 health. You can also just shoot one down in 2 hits.</p>
       <p>Your gun automatically upgrades every 1500 points, rotating between faster fire rate, faster bullets, and an extra bullet per shot.</p>
-      <p>Play online with a friend: one of you hosts and shares the 5-letter code, the other joins with it. You each keep your own health/ammo/score in the same shared world.</p>
+      <p>Play online with a friend: one of you hosts and shares the 5-letter code, the other joins with it. You each keep your own health/ammo/score in the same shared world, racing to 7000 points. If you die first, you lie down and keep spectating until the match ends - first to 7000 wins, or if you both die first, whoever has the higher score wins.</p>
     </div>
   </div>
 
@@ -514,7 +522,7 @@
 
       <div id="gameOverOverlay" class="hidden">
         <div class="gameOverPanel">
-          <h2>Game Over</h2>
+          <h2 id="gameOverHeading">Game Over</h2>
           <p>Score: <span id="finalScore">0</span></p>
           <p>High Score: <span id="finalHighScore">0</span></p>
           <p id="finalVsLine" class="hidden"></p>
