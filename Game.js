@@ -78,7 +78,16 @@ window.addEventListener("mouseleave", () => {
   mouse.active = false;
 });
 
+let manualAimDir = null; // unit vector set while the mobile aim stick is actively deflected
+
 function getAimTarget(p) {
+  if (manualAimDir) {
+    return {
+      x: p.x + p.width / 2 + manualAimDir.x * 1000,
+      y: p.y + manualAimDir.y * 1000
+    };
+  }
+
   let target = { x: mouse.x, y: mouse.y };
 
   if (!mouse.active) {
@@ -256,11 +265,6 @@ window.addEventListener("keydown", e => {
     reloadTimer = reloadTime;
   }
 
-  // Shoot with Space
-  if (key === " " || key === "spacebar") {
-    shoot();
-  }
-
   // Double tap Down to lay down
   if (key === "arrowdown") {
     registerDownPress();
@@ -283,6 +287,33 @@ function registerDownPress() {
   }
   lastDownTime = now;
 }
+
+// ===== DESKTOP: right-click to shoot =====
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+let rightClickFireInterval = null;
+
+canvas.addEventListener("mousedown", (e) => {
+  if (e.button !== 2) return;
+  e.preventDefault();
+  if (!gameStarted) return;
+
+  if (gameOver) {
+    resetGame();
+    return;
+  }
+
+  shoot();
+  rightClickFireInterval = setInterval(shoot, 120);
+});
+
+window.addEventListener("mouseup", (e) => {
+  if (e.button !== 2) return;
+  if (rightClickFireInterval) {
+    clearInterval(rightClickFireInterval);
+    rightClickFireInterval = null;
+  }
+});
 
 // ===== TOUCH CONTROLS (mobile) =====
 const isTouchDevice = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
@@ -370,41 +401,73 @@ if (joystickBase && joystickThumb) {
   joystickBase.addEventListener("touchcancel", endJoystickTouch, { passive: false });
 }
 
-const touchFireBtn = document.getElementById("touchFire");
-if (touchFireBtn) {
-  let fireInterval = null;
-  let fireTouchId = null;
+// Aim stick: drag to aim, release to fire in that direction. A tap with no
+// drag fires using the normal auto-aim (nearest bird) instead.
+const aimStickBase = document.getElementById("aimStickBase");
+const aimStickThumb = document.getElementById("aimStickThumb");
+if (aimStickBase && aimStickThumb) {
+  const aimRadius = 45;
+  const aimDeadzone = 10;
+  let aimTouchId = null;
+  let aimCenterX = 0;
+  let aimCenterY = 0;
 
-  const stopFire = () => {
-    if (fireInterval) {
-      clearInterval(fireInterval);
-      fireInterval = null;
+  function findAimTouch(touchList) {
+    for (let i = 0; i < touchList.length; i++) {
+      if (touchList[i].identifier === aimTouchId) return touchList[i];
     }
-    fireTouchId = null;
-  };
+    return null;
+  }
 
-  touchFireBtn.addEventListener("touchstart", (e) => {
+  function updateAimStick(clientX, clientY) {
+    const rawDx = clientX - aimCenterX;
+    const rawDy = clientY - aimCenterY;
+    const dist = Math.hypot(rawDx, rawDy) || 1;
+    const clampedDist = Math.min(dist, aimRadius);
+
+    aimStickThumb.style.transform = `translate(${(rawDx / dist) * clampedDist}px, ${(rawDy / dist) * clampedDist}px)`;
+
+    manualAimDir = dist > aimDeadzone ? { x: rawDx / dist, y: rawDy / dist } : null;
+  }
+
+  aimStickBase.addEventListener("touchstart", (e) => {
     e.preventDefault();
-    if (fireTouchId !== null) return;
-    fireTouchId = e.changedTouches[0].identifier;
+    if (!gameStarted || aimTouchId !== null) return;
 
-    if (!gameStarted) return;
     if (gameOver) {
       resetGame();
       return;
     }
-    shoot();
-    fireInterval = setInterval(shoot, 120);
+
+    const rect = aimStickBase.getBoundingClientRect();
+    aimCenterX = rect.left + rect.width / 2;
+    aimCenterY = rect.top + rect.height / 2;
+    aimTouchId = e.changedTouches[0].identifier;
+    updateAimStick(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
   }, { passive: false });
 
-  touchFireBtn.addEventListener("touchend", (e) => {
+  aimStickBase.addEventListener("touchmove", (e) => {
+    if (aimTouchId === null) return;
+    const touch = findAimTouch(e.changedTouches);
+    if (!touch) return;
     e.preventDefault();
-    stopFire();
+    updateAimStick(touch.clientX, touch.clientY);
   }, { passive: false });
-  touchFireBtn.addEventListener("touchcancel", (e) => {
+
+  const endAimTouch = (e) => {
+    if (aimTouchId === null) return;
+    const touch = findAimTouch(e.changedTouches);
+    if (!touch) return;
     e.preventDefault();
-    stopFire();
-  }, { passive: false });
+
+    aimTouchId = null;
+    aimStickThumb.style.transform = "translate(0, 0)";
+    shoot();
+    manualAimDir = null;
+  };
+
+  aimStickBase.addEventListener("touchend", endAimTouch, { passive: false });
+  aimStickBase.addEventListener("touchcancel", endAimTouch, { passive: false });
 }
 
 canvas.addEventListener("click", () => {
