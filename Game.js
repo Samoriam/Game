@@ -373,6 +373,95 @@ function drawBird(bird) {
   }
 }
 
+// ===== GEESE =====
+// Ground-level hazards that start appearing once the player has scored
+// enough. Walking geese have to be jumped over; low-flying geese have to
+// be ducked under (crouch or lay down). They aren't shootable - pure
+// dodge obstacles.
+const geese = [];
+const maxGeese = 2;
+let gooseSpawnTimer = 0;
+const gooseStartScore = 3000;
+const gooseDamage = 10;
+const gooseHitCooldown = 60;
+const gooseCollisionRangeX = 26;
+const gooseWalkingY = 495;
+const gooseFlyingY = 430;
+
+function spawnGoose() {
+  const fromLeft = Math.random() < 0.5;
+  const x = fromLeft ? -30 : canvas.width + 30;
+  const flying = Math.random() < 0.5;
+  const speed = (2 + Math.random() * 2) * birdSpeedMultiplier();
+
+  geese.push({
+    x,
+    y: flying ? gooseFlyingY : gooseWalkingY,
+    flying,
+    vx: (fromLeft ? 1 : -1) * speed,
+    phase: Math.random() * Math.PI * 2
+  });
+}
+
+function drawGoose(goose) {
+  const direction = goose.vx >= 0 ? 1 : -1;
+
+  ctx.save();
+  ctx.translate(goose.x, goose.y);
+  ctx.scale(direction, 1);
+
+  // Body
+  ctx.fillStyle = "#e8e8e8";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 20, 11, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Neck
+  ctx.beginPath();
+  ctx.ellipse(16, -14, 6, 10, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Head
+  ctx.fillStyle = "#222";
+  ctx.beginPath();
+  ctx.ellipse(18, -20, 5, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Beak
+  ctx.fillStyle = "#f2a900";
+  ctx.beginPath();
+  ctx.moveTo(22, -20);
+  ctx.lineTo(29, -19);
+  ctx.lineTo(22, -17);
+  ctx.closePath();
+  ctx.fill();
+
+  if (goose.flying) {
+    const flap = Math.sin(time * 0.3 + goose.phase) * 6;
+    ctx.fillStyle = "#cfcfcf";
+    ctx.beginPath();
+    ctx.moveTo(-4, 0);
+    ctx.lineTo(-20, -8 - flap);
+    ctx.lineTo(-14, 2);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    const waddle = Math.sin(time * 0.3 + goose.phase) * 3;
+    ctx.strokeStyle = "#f2a900";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-4, 9);
+    ctx.lineTo(-4 + waddle, 18);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(4, 9);
+    ctx.lineTo(4 - waddle, 18);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
 // ===== KEYS & DOUBLE TAP =====
 const keys = {};
 let lastDownTime = 0;
@@ -854,6 +943,49 @@ function update() {
     }
   }
 
+  // Geese: ground-level hazards once the score is high enough
+  if (score >= gooseStartScore) {
+    if (gooseSpawnTimer > 0) gooseSpawnTimer--;
+    if (geese.length < maxGeese && gooseSpawnTimer <= 0) {
+      spawnGoose();
+      gooseSpawnTimer = 120 + Math.random() * 120;
+    }
+  }
+
+  for (let i = geese.length - 1; i >= 0; i--) {
+    const goose = geese[i];
+    goose.x += goose.vx;
+
+    if (goose.x < -60 || goose.x > canvas.width + 60) {
+      geese.splice(i, 1);
+      continue;
+    }
+
+    const withinX = Math.abs((player.x + player.width / 2) - goose.x) < gooseCollisionRangeX;
+    if (withinX && player.invincible <= 0) {
+      const avoided = goose.flying
+        ? (player.state === "crouching" || player.state === "laying")
+        : !player.onGround;
+
+      if (!avoided) {
+        player.invincible = gooseHitCooldown;
+        explosions.push({ x: player.x, y: player.y - 30, radius: 6, life: 20 });
+
+        if (shieldTimer <= 0) {
+          health -= gooseDamage;
+          if (health < 0) health = 0;
+          updateHealthDisplay();
+
+          if (health <= 0) {
+            gameOver = true;
+            checkHighScore();
+            showGameOverOverlay();
+          }
+        }
+      }
+    }
+  }
+
   // Update explosion visuals
   for (let i = explosions.length - 1; i >= 0; i--) {
     explosions[i].radius += 2;
@@ -1027,6 +1159,11 @@ function draw() {
     drawBird(bird);
   }
 
+  // Draw geese at ground level
+  for (const goose of geese) {
+    drawGoose(goose);
+  }
+
   // Draw power-up pickups on the ground (or falling in from the sky)
   const powerUpColors = {
     bubble: "#4fc3f7", tripleAmmo: "#ffb300", rapidFire: "#ffee58",
@@ -1186,6 +1323,8 @@ function resetGame() {
 
   bullets.length = 0;
   birds.length = 0;
+  geese.length = 0;
+  gooseSpawnTimer = 0;
   explosions.length = 0;
   powerUps.length = 0;
 }
