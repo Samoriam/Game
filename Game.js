@@ -90,6 +90,51 @@ const bullets = [];
 const bulletSpeed = 14;
 const mobileBulletSpeedMultiplier = 1.6;
 
+// ===== GUN UPGRADES =====
+// Every gunUpgradeInterval points, the gun permanently gets a little
+// better. Upgrades rotate through three kinds as the tiers climb:
+// 1) faster fire rate, 2) faster bullets, 3) +1 extra bullet per shot.
+const gunUpgradeInterval = 1500;
+const fireRateStep = 1; // frames shaved off the base cooldown per tier
+const minFireRate = 3;
+const bulletSpeedStep = 2;
+const bulletSpreadAngle = 0.12; // radians between adjacent bullets in a multi-shot
+
+let gunUpgradeTier = 0;
+let fireRateUpgrades = 0;
+let bulletSpeedUpgrades = 0;
+let extraBulletCount = 0;
+let gunUpgradeMessage = "";
+let gunUpgradeMessageTimer = 0;
+
+function applyGunUpgradeTier(tier) {
+  const kind = tier % 3;
+  if (kind === 1) {
+    fireRateUpgrades++;
+    gunUpgradeMessage = "Fire Rate Up!";
+  } else if (kind === 2) {
+    bulletSpeedUpgrades++;
+    gunUpgradeMessage = "Bullet Speed Up!";
+  } else {
+    extraBulletCount++;
+    gunUpgradeMessage = "Multi-Shot Up!";
+  }
+  gunUpgradeMessageTimer = 90;
+}
+
+function syncGunUpgrades() {
+  const tier = Math.floor(score / gunUpgradeInterval);
+  while (gunUpgradeTier < tier) {
+    gunUpgradeTier++;
+    applyGunUpgradeTier(gunUpgradeTier);
+  }
+}
+
+function currentBulletSpeed() {
+  const base = bulletSpeed + bulletSpeedUpgrades * bulletSpeedStep;
+  return isTouchDevice ? base * mobileBulletSpeedMultiplier : base;
+}
+
 // ===== EXPLOSIONS =====
 const explosions = [];
 
@@ -192,7 +237,8 @@ let fireCooldown = 0;
 const baseFireRate = 10; // frames between repeated shots while held
 
 function currentFireRate() {
-  return rapidFireTimer > 0 ? Math.max(3, Math.round(baseFireRate / 2)) : baseFireRate;
+  const upgraded = Math.max(minFireRate, baseFireRate - fireRateUpgrades * fireRateStep);
+  return rapidFireTimer > 0 ? Math.max(minFireRate, Math.round(upgraded / 2)) : upgraded;
 }
 
 function getAimTarget(p) {
@@ -703,15 +749,21 @@ function shoot() {
 
   const angle = getAimAngle(player);
   const muzzle = getMuzzlePosition(player, angle);
-  const speed = isTouchDevice ? bulletSpeed * mobileBulletSpeedMultiplier : bulletSpeed;
+  const speed = currentBulletSpeed();
 
-  bullets.push({
-    x: muzzle.x,
-    y: muzzle.y,
-    vx: Math.cos(angle) * speed,
-    vy: Math.sin(angle) * speed,
-    life: 70
-  });
+  const shotCount = 1 + extraBulletCount;
+  const spreadStart = -((shotCount - 1) / 2) * bulletSpreadAngle;
+
+  for (let i = 0; i < shotCount; i++) {
+    const shotAngle = angle + spreadStart + i * bulletSpreadAngle;
+    bullets.push({
+      x: muzzle.x,
+      y: muzzle.y,
+      vx: Math.cos(shotAngle) * speed,
+      vy: Math.sin(shotAngle) * speed,
+      life: 70
+    });
+  }
 
   // Auto-reload once the magazine is empty
   if (ammo <= 0 && !isReloading) {
@@ -742,6 +794,10 @@ function update() {
     spawnSkyDrop();
     nextSkyDropScore += skyDropScoreInterval;
   }
+
+  // The gun permanently upgrades at every gunUpgradeInterval points
+  syncGunUpgrades();
+  if (gunUpgradeMessageTimer > 0) gunUpgradeMessageTimer--;
 
   // Power-up pickups on the ground (or still falling, for sky drops)
   for (let i = powerUps.length - 1; i >= 0; i--) {
@@ -1236,6 +1292,16 @@ function draw() {
     ctx.fillText("Reloading...", 10, 30);
   }
 
+  // Gun upgrade announcement
+  if (gunUpgradeMessageTimer > 0) {
+    const alpha = Math.min(gunUpgradeMessageTimer / 20, 1);
+    ctx.fillStyle = `rgba(255, 215, 64, ${alpha})`;
+    ctx.font = "bold 22px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(gunUpgradeMessage, canvas.width / 2, 60);
+    ctx.textAlign = "left";
+  }
+
   time++;
 }
 
@@ -1305,6 +1371,13 @@ function resetGame() {
   reloadTimer = 0;
   gameOver = false;
   if (gameOverOverlay) gameOverOverlay.classList.add("hidden");
+
+  gunUpgradeTier = 0;
+  fireRateUpgrades = 0;
+  bulletSpeedUpgrades = 0;
+  extraBulletCount = 0;
+  gunUpgradeMessage = "";
+  gunUpgradeMessageTimer = 0;
 
   shieldTimer = 0;
   tripleAmmoTimer = 0;
