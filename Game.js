@@ -24,6 +24,7 @@ let playerColorKey = "red";
 // mirrors that broadcast instead of spawning its own. Each player always
 // manages their own position/health/ammo/score locally and just shares it.
 let remotePlayer = null; // last known state of the other player, or null if solo/not yet heard from
+let remoteBullets = []; // the other player's bullets, extrapolated locally between network snapshots
 let nextEntityId = 1;
 let mpBroadcastTimer = 0;
 const mpBroadcastInterval = 3; // frames between network broadcasts (~20/sec)
@@ -527,7 +528,7 @@ const gooseCollisionRangeX = 26;
 const gooseWalkingY = 495;
 const gooseFlyingY = 430;
 const gooseMaxHp = 2;
-const goosePoints = 100;
+const goosePoints = 50;
 const gooseHitboxWidth = 36;
 const gooseHitboxHeight = 22;
 
@@ -664,6 +665,7 @@ function applyGooseHit(goose, awardScore) {
 // ===== MULTIPLAYER MESSAGE HANDLERS =====
 Net.on("player", (data) => {
   remotePlayer = data;
+  remoteBullets = (data.bullets || []).map((b) => ({ ...b }));
   if (p2ScoreLine && p2ScoreDisplay) {
     p2ScoreDisplay.textContent = data.score;
     p2ScoreLine.classList.remove("hidden");
@@ -713,11 +715,18 @@ Net.on("pickup", (data) => {
   if (index !== -1) powerUps.splice(index, 1);
 });
 
+Net.on("avoidGoose", (data) => {
+  if (!simulatingWorld()) return;
+  const index = geese.findIndex((g) => g.id === data.id);
+  if (index !== -1) geese.splice(index, 1);
+});
+
 Net.on("rematch", () => resetGame());
 
 Net.on("disconnected", () => {
   const wasSpectating = gameOver && !matchOver;
   remotePlayer = null;
+  remoteBullets.length = 0;
   if (p2ScoreLine) p2ScoreLine.classList.add("hidden");
   // A guest who loses the host's feed falls back to simulating its own
   // world from here (simulatingWorld() becomes true once the role clears).
@@ -1003,6 +1012,16 @@ function update() {
   if (matchOver) return;
   if (gameOver && !inMultiplayerMatch()) return;
   const amAlive = !gameOver;
+
+  // Advance the other player's bullets locally between network snapshots,
+  // so they fly smoothly instead of jumping every broadcast
+  for (let i = remoteBullets.length - 1; i >= 0; i--) {
+    const rb = remoteBullets[i];
+    rb.x += rb.vx;
+    rb.y += rb.vy;
+    rb.life--;
+    if (rb.life <= 0) remoteBullets.splice(i, 1);
+  }
 
   // Hold-to-fire: desktop left-click or the mobile aim stick
   if (amAlive) {
@@ -1299,7 +1318,17 @@ function update() {
         ? (player.state === "crouching" || player.state === "laying")
         : !player.onGround;
 
-      if (!avoided) {
+      if (avoided) {
+        // Successfully ducking under a low-flying goose takes it out of play
+        if (goose.flying) {
+          if (simulatingWorld()) {
+            geese.splice(i, 1);
+          } else {
+            Net.send("avoidGoose", { id: goose.id });
+          }
+          continue;
+        }
+      } else {
         player.invincible = gooseHitCooldown;
         explosions.push({ x: player.x, y: player.y - 30, radius: 6, life: 20 });
 
@@ -1354,7 +1383,8 @@ function update() {
         maxAmmo: effectiveMaxAmmo(),
         score,
         color: playerColorKey,
-        gameOver
+        gameOver,
+        bullets: bullets.map((b) => ({ x: b.x, y: b.y, vx: b.vx, vy: b.vy, life: b.life }))
       });
 
       if (simulatingWorld()) {
@@ -1600,9 +1630,12 @@ function draw() {
     ctx.fill();
   }
 
-  // Draw bullets
+  // Draw bullets (mine and the other player's)
   ctx.fillStyle = "#000000";
   for (let bullet of bullets) {
+    ctx.fillRect(bullet.x - 3, bullet.y - 3, 6, 6);
+  }
+  for (const bullet of remoteBullets) {
     ctx.fillRect(bullet.x - 3, bullet.y - 3, 6, 6);
   }
 
