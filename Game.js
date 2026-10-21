@@ -3,6 +3,7 @@ const ctx = canvas.getContext("2d");
 const ammoDisplay = document.getElementById("ammo");
 const maxAmmoDisplay = document.getElementById("maxAmmoDisplay");
 const healthDisplay = document.getElementById("health");
+const maxHealthDisplay = document.getElementById("maxHealthDisplay");
 const scoreDisplay = document.getElementById("score");
 const buffsDisplay = document.getElementById("buffs");
 const highScoreDisplay = document.getElementById("highScore");
@@ -33,9 +34,16 @@ const player = {
 let time = 0;
 
 // ===== HEALTH =====
-const maxHealth = 100;
+const baseMaxHealth = 100;
+let maxHealth = baseMaxHealth; // can grow permanently via the maxHealthBoost power-up
 let health = maxHealth;
-const redBirdDamage = 10; // % health lost per red bird attack
+
+function updateHealthDisplay() {
+  healthDisplay.textContent = health;
+  if (maxHealthDisplay) maxHealthDisplay.textContent = maxHealth;
+}
+
+const redBirdDamage = 10; // flat health points lost per red bird attack
 const redBirdChaseSpeed = 6;
 const redBirdAttackRange = 40;
 const redBirdAttackCooldown = 60; // frames of player invincibility between attacks
@@ -86,23 +94,37 @@ const mobileBulletSpeedMultiplier = 1.6;
 const explosions = [];
 
 // ===== POWER-UPS =====
-// Purple birds (rare, 2 hits to kill) drop one of these on death. Walk into
-// a dropped power-up to activate it; uncollected drops disappear after
-// powerUpLifetime, and an activated effect lasts powerUpDuration.
+// Two kinds, sharing one array/pickup system:
+// - "buff": purple birds (rare, 2 hits to kill) drop one on death. Timed,
+//   30s effect once picked up, disappears after 20s if left uncollected.
+// - "instant": falls from the sky every skyDropScoreInterval points. A
+//   one-time, permanent effect the moment it's picked up.
 const powerUps = [];
-const powerUpTypes = ["bubble", "tripleAmmo", "rapidFire"];
+const buffPowerUpTypes = ["bubble", "tripleAmmo", "rapidFire"];
+const instantPowerUpTypes = ["healthRefill", "ammoBoost", "maxHealthBoost"];
 const powerUpLifetime = 20 * 60; // 20s before an uncollected drop disappears
 const powerUpDuration = 30 * 60; // 30s active effect once picked up
 const powerUpPickupRadius = 36;
 const powerUpGroundY = 490;
+const skyDropFallSpeed = 2.5;
+const skyDropScoreInterval = 1500;
+const ammoBoostAmount = 10;
+const maxHealthBoostAmount = 20;
 
 let shieldTimer = 0;
 let tripleAmmoTimer = 0;
 let rapidFireTimer = 0;
+let nextSkyDropScore = skyDropScoreInterval;
 
 function spawnPowerUp(x) {
-  const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
-  powerUps.push({ x, y: powerUpGroundY, type, life: powerUpLifetime, bob: Math.random() * Math.PI * 2 });
+  const type = buffPowerUpTypes[Math.floor(Math.random() * buffPowerUpTypes.length)];
+  powerUps.push({ x, y: powerUpGroundY, type, kind: "buff", falling: false, life: powerUpLifetime, bob: Math.random() * Math.PI * 2 });
+}
+
+function spawnSkyDrop() {
+  const type = instantPowerUpTypes[Math.floor(Math.random() * instantPowerUpTypes.length)];
+  const x = 60 + Math.random() * (canvas.width - 120);
+  powerUps.push({ x, y: 20, type, kind: "instant", falling: true, vy: skyDropFallSpeed, life: powerUpLifetime, bob: Math.random() * Math.PI * 2 });
 }
 
 function effectiveMaxAmmo() {
@@ -118,6 +140,20 @@ function activatePowerUp(type) {
     updateAmmoDisplay();
   } else if (type === "rapidFire") {
     rapidFireTimer = powerUpDuration;
+  }
+}
+
+function applyInstantPowerUp(type) {
+  if (type === "healthRefill") {
+    health = maxHealth;
+    updateHealthDisplay();
+  } else if (type === "ammoBoost") {
+    ammo = Math.min(ammo + ammoBoostAmount, effectiveMaxAmmo());
+    updateAmmoDisplay();
+  } else if (type === "maxHealthBoost") {
+    maxHealth += maxHealthBoostAmount;
+    health = maxHealth;
+    updateHealthDisplay();
   }
 }
 
@@ -231,7 +267,7 @@ const birds = [];
 const maxBirds = 7;
 let birdSpawnTimer = 0;
 
-const purpleBirdSpawnChance = 0.05; // rare
+const purpleBirdSpawnChance = 0.12;
 const redBirdSpawnChance = 0.2;
 
 // Birds fly a little faster for every birdSpeedUpInterval points scored
@@ -606,18 +642,37 @@ function update() {
   if (rapidFireTimer > 0) rapidFireTimer--;
   updateBuffsDisplay();
 
-  // Power-up pickups on the ground
+  // A one-time instant power-up falls from the sky at each score milestone
+  if (score >= nextSkyDropScore) {
+    spawnSkyDrop();
+    nextSkyDropScore += skyDropScoreInterval;
+  }
+
+  // Power-up pickups on the ground (or still falling, for sky drops)
   for (let i = powerUps.length - 1; i >= 0; i--) {
     const pu = powerUps[i];
-    pu.life--;
-    if (pu.life <= 0) {
-      powerUps.splice(i, 1);
-      continue;
+
+    if (pu.falling) {
+      pu.y += pu.vy;
+      if (pu.y >= powerUpGroundY) {
+        pu.y = powerUpGroundY;
+        pu.falling = false;
+      }
+    } else {
+      pu.life--;
+      if (pu.life <= 0) {
+        powerUps.splice(i, 1);
+        continue;
+      }
     }
 
     const dist = Math.hypot((player.x + player.width / 2) - pu.x, player.y - pu.y);
     if (dist < powerUpPickupRadius) {
-      activatePowerUp(pu.type);
+      if (pu.kind === "buff") {
+        activatePowerUp(pu.type);
+      } else {
+        applyInstantPowerUp(pu.type);
+      }
       powerUps.splice(i, 1);
     }
   }
@@ -773,7 +828,7 @@ function update() {
         if (shieldTimer <= 0) {
           health -= redBirdDamage;
           if (health < 0) health = 0;
-          healthDisplay.textContent = health;
+          updateHealthDisplay();
 
           if (health <= 0) {
             gameOver = true;
@@ -966,12 +1021,18 @@ function draw() {
     drawBird(bird);
   }
 
-  // Draw power-up pickups on the ground
-  const powerUpColors = { bubble: "#4fc3f7", tripleAmmo: "#ffb300", rapidFire: "#ffee58" };
-  const powerUpLabels = { bubble: "SH", tripleAmmo: "x3", rapidFire: "RF" };
+  // Draw power-up pickups on the ground (or falling in from the sky)
+  const powerUpColors = {
+    bubble: "#4fc3f7", tripleAmmo: "#ffb300", rapidFire: "#ffee58",
+    healthRefill: "#66bb6a", ammoBoost: "#8d6e63", maxHealthBoost: "#ef5350"
+  };
+  const powerUpLabels = {
+    bubble: "SH", tripleAmmo: "x3", rapidFire: "RF",
+    healthRefill: "HP", ammoBoost: "+A", maxHealthBoost: "MX"
+  };
   for (const pu of powerUps) {
-    const bobY = pu.y + Math.sin(time * 0.1 + pu.bob) * 4;
-    ctx.globalAlpha = pu.life < 180 ? Math.max(pu.life / 180, 0.2) : 1;
+    const bobY = pu.falling ? pu.y : pu.y + Math.sin(time * 0.1 + pu.bob) * 4;
+    ctx.globalAlpha = (!pu.falling && pu.life < 180) ? Math.max(pu.life / 180, 0.2) : 1;
 
     ctx.fillStyle = powerUpColors[pu.type];
     ctx.beginPath();
@@ -1091,10 +1152,12 @@ function startGame(character) {
 
 // Reset all game state after a Game Over
 function resetGame() {
+  maxHealth = baseMaxHealth;
   health = maxHealth;
-  healthDisplay.textContent = health;
+  updateHealthDisplay();
   score = 0;
   scoreDisplay.textContent = score;
+  nextSkyDropScore = skyDropScoreInterval;
   isReloading = false;
   reloadTimer = 0;
   gameOver = false;
