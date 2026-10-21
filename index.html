@@ -240,6 +240,14 @@
       display: none;
     }
 
+    #p2ScoreLine {
+      color: #90caf9;
+    }
+
+    #p2ScoreLine.hidden {
+      display: none;
+    }
+
     /* ===== GAME OVER ===== */
     #gameOverOverlay {
       position: absolute;
@@ -270,6 +278,19 @@
     .gameOverPanel p {
       margin: 4px 0;
       font-size: 16px;
+    }
+
+    #finalVsLine {
+      font-weight: bold;
+      margin-top: 10px !important;
+    }
+
+    #finalVsLine.winning {
+      color: #81c784;
+    }
+
+    #finalVsLine.losing {
+      color: #e57373;
     }
 
     .gameOverButtons {
@@ -472,6 +493,7 @@
       <span>Ammo: <span id="ammo">40</span>/<span id="maxAmmoDisplay">40</span></span>
       <span>Health: <span id="health">100</span>/<span id="maxHealthDisplay">100</span></span>
       <span>Score: <span id="score">0</span></span>
+      <span id="p2ScoreLine" class="hidden">P2 Score: <span id="p2Score">0</span></span>
       <span>Best: <span id="highScore">0</span></span>
       <span id="buffs"></span>
     </div>
@@ -495,6 +517,7 @@
           <h2>Game Over</h2>
           <p>Score: <span id="finalScore">0</span></p>
           <p>High Score: <span id="finalHighScore">0</span></p>
+          <p id="finalVsLine" class="hidden"></p>
           <div class="gameOverButtons">
             <button id="replayBtn" type="button">Replay</button>
             <button id="exitBtn" type="button">Exit to Menu</button>

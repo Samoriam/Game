@@ -8,6 +8,8 @@ const scoreDisplay = document.getElementById("score");
 const buffsDisplay = document.getElementById("buffs");
 const highScoreDisplay = document.getElementById("highScore");
 const selectHighScoreDisplay = document.getElementById("selectHighScore");
+const p2ScoreLine = document.getElementById("p2ScoreLine");
+const p2ScoreDisplay = document.getElementById("p2Score");
 
 // ===== CHARACTER COLORS =====
 const characterColors = {
@@ -612,6 +614,10 @@ function applyGooseHit(goose, awardScore) {
 // ===== MULTIPLAYER MESSAGE HANDLERS =====
 Net.on("player", (data) => {
   remotePlayer = data;
+  if (p2ScoreLine && p2ScoreDisplay) {
+    p2ScoreDisplay.textContent = data.score;
+    p2ScoreLine.classList.remove("hidden");
+  }
 });
 
 Net.on("world", (data) => {
@@ -659,6 +665,7 @@ Net.on("pickup", (data) => {
 
 Net.on("disconnected", () => {
   remotePlayer = null;
+  if (p2ScoreLine) p2ScoreLine.classList.add("hidden");
   // A guest who loses the host's feed falls back to simulating its own
   // world from here (simulatingWorld() becomes true once the role clears).
   Net.disconnect();
@@ -1565,6 +1572,7 @@ function stopGameLoop() {
 const gameOverOverlay = document.getElementById("gameOverOverlay");
 const finalScoreDisplay = document.getElementById("finalScore");
 const finalHighScoreDisplay = document.getElementById("finalHighScore");
+const finalVsLine = document.getElementById("finalVsLine");
 const replayBtn = document.getElementById("replayBtn");
 const exitBtn = document.getElementById("exitBtn");
 const characterSelectEl = document.getElementById("characterSelect");
@@ -1573,6 +1581,26 @@ const gameAreaEl = document.getElementById("gameArea");
 function showGameOverOverlay() {
   if (finalScoreDisplay) finalScoreDisplay.textContent = score;
   if (finalHighScoreDisplay) finalHighScoreDisplay.textContent = highScore;
+
+  if (finalVsLine) {
+    if (remotePlayer) {
+      const diff = score - remotePlayer.score;
+      finalVsLine.classList.remove("hidden", "winning", "losing");
+
+      if (diff > 0) {
+        finalVsLine.textContent = `You're ahead of P2 (${remotePlayer.score}) by ${diff}!`;
+        finalVsLine.classList.add("winning");
+      } else if (diff < 0) {
+        finalVsLine.textContent = `P2 is ahead with ${remotePlayer.score} - you need ${-diff} more`;
+        finalVsLine.classList.add("losing");
+      } else {
+        finalVsLine.textContent = `Tied with P2 at ${remotePlayer.score}!`;
+      }
+    } else {
+      finalVsLine.classList.add("hidden");
+    }
+  }
+
   if (gameOverOverlay) gameOverOverlay.classList.remove("hidden");
 }
 
@@ -1587,6 +1615,7 @@ if (exitBtn) {
     gameStarted = false;
     Net.disconnect();
     remotePlayer = null;
+    if (p2ScoreLine) p2ScoreLine.classList.add("hidden");
     if (gameAreaEl) gameAreaEl.classList.add("hidden");
     if (characterSelectEl) characterSelectEl.classList.remove("hidden");
 
