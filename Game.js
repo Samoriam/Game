@@ -47,8 +47,8 @@ const redBirdPoints = 200;
 const redBirdKillBonus = 100;
 
 // ===== GUN & AMMO =====
-let ammo = 20;
-const maxAmmo = 20;
+let ammo = 40;
+const maxAmmo = 40;
 let isReloading = false;
 let reloadTimer = 0;
 const reloadTime = 90;
@@ -56,6 +56,7 @@ const reloadTime = 90;
 // ===== BULLETS =====
 const bullets = [];
 const bulletSpeed = 14;
+const mobileBulletSpeedMultiplier = 1.6;
 
 // ===== EXPLOSIONS =====
 const explosions = [];
@@ -496,12 +497,13 @@ function shoot() {
 
   const angle = getAimAngle(player);
   const muzzle = getMuzzlePosition(player, angle);
+  const speed = isTouchDevice ? bulletSpeed * mobileBulletSpeedMultiplier : bulletSpeed;
 
   bullets.push({
     x: muzzle.x,
     y: muzzle.y,
-    vx: Math.cos(angle) * bulletSpeed,
-    vy: Math.sin(angle) * bulletSpeed,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
     life: 70
   });
 
