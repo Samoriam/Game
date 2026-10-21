@@ -278,6 +278,11 @@ function birdSpeedMultiplier() {
   return 1 + Math.floor(score / birdSpeedUpInterval) * birdSpeedUpAmount;
 }
 
+// Past this score, some red birds start the fight already enraged instead
+// of waiting for a first hit to come after the player.
+const autoAttackScoreThreshold = 6000;
+const autoAttackChance = 0.5;
+
 function spawnBird() {
   const fromLeft = Math.random() < 0.5;
   const x = fromLeft ? -40 : canvas.width + 40;
@@ -287,6 +292,7 @@ function spawnBird() {
   const typeRoll = Math.random();
   const isPurple = typeRoll < purpleBirdSpawnChance;
   const isExploding = !isPurple && typeRoll < purpleBirdSpawnChance + redBirdSpawnChance;
+  const startsAttacking = isExploding && score >= autoAttackScoreThreshold && Math.random() < autoAttackChance;
 
   birds.push({
     x,
@@ -299,7 +305,7 @@ function spawnBird() {
     isExploding,
     isPurple,
     dying: false,
-    attacking: false,
+    attacking: startsAttacking,
     hp: isExploding ? redBirdMaxHp : (isPurple ? purpleBirdMaxHp : 1),
     retreatTimer: 0,
     fallVy: 0,
