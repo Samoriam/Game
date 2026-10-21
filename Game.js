@@ -778,6 +778,7 @@ function update() {
           if (health <= 0) {
             gameOver = true;
             checkHighScore();
+            showGameOverOverlay();
           }
         }
       }
@@ -1031,36 +1032,60 @@ function draw() {
     ctx.fillText("Reloading...", 10, 30);
   }
 
-  // Game over overlay
-  if (gameOver) {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "center";
-    ctx.font = "48px Arial";
-    ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 10);
-    ctx.font = "20px Arial";
-    ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 20);
-    ctx.fillText(`High Score: ${highScore}`, canvas.width / 2, canvas.height / 2 + 48);
-    ctx.fillText("Press R to Restart", canvas.width / 2, canvas.height / 2 + 78);
-    ctx.textAlign = "left";
-  }
-
   time++;
 }
 
 // ===== GAME LOOP =====
+let animationFrameId = null;
+
 function gameLoop() {
   update();
   draw();
-  requestAnimationFrame(gameLoop);
+  animationFrameId = requestAnimationFrame(gameLoop);
+}
+
+function stopGameLoop() {
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+}
+
+// ===== GAME OVER OVERLAY (Replay / Exit) =====
+const gameOverOverlay = document.getElementById("gameOverOverlay");
+const finalScoreDisplay = document.getElementById("finalScore");
+const finalHighScoreDisplay = document.getElementById("finalHighScore");
+const replayBtn = document.getElementById("replayBtn");
+const exitBtn = document.getElementById("exitBtn");
+const characterSelectEl = document.getElementById("characterSelect");
+const gameAreaEl = document.getElementById("gameArea");
+
+function showGameOverOverlay() {
+  if (finalScoreDisplay) finalScoreDisplay.textContent = score;
+  if (finalHighScoreDisplay) finalHighScoreDisplay.textContent = highScore;
+  if (gameOverOverlay) gameOverOverlay.classList.remove("hidden");
+}
+
+if (replayBtn) {
+  replayBtn.addEventListener("click", () => resetGame());
+}
+
+if (exitBtn) {
+  exitBtn.addEventListener("click", () => {
+    stopGameLoop();
+    resetGame();
+    gameStarted = false;
+    if (gameAreaEl) gameAreaEl.classList.add("hidden");
+    if (characterSelectEl) characterSelectEl.classList.remove("hidden");
+  });
 }
 
 // Called once the player picks a character on the selection screen
 function startGame(character) {
   playerColors = characterColors[character] || characterColors.red;
+  resetGame();
   gameStarted = true;
+  stopGameLoop();
   gameLoop();
 }
 
@@ -1073,6 +1098,7 @@ function resetGame() {
   isReloading = false;
   reloadTimer = 0;
   gameOver = false;
+  if (gameOverOverlay) gameOverOverlay.classList.add("hidden");
 
   shieldTimer = 0;
   tripleAmmoTimer = 0;

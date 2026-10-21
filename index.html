@@ -37,6 +37,10 @@
       overflow-y: auto;
     }
 
+    #characterSelect.hidden {
+      display: none;
+    }
+
     #characterSelect h1 {
       margin: 0;
       font-size: 28px;
@@ -131,6 +135,70 @@
 
     #buffs:empty {
       display: none;
+    }
+
+    /* ===== GAME OVER ===== */
+    #gameOverOverlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.65);
+      z-index: 4;
+    }
+
+    #gameOverOverlay.hidden {
+      display: none;
+    }
+
+    .gameOverPanel {
+      text-align: center;
+      background: rgba(0, 0, 0, 0.4);
+      border-radius: 12px;
+      padding: 24px 32px;
+    }
+
+    .gameOverPanel h2 {
+      margin: 0 0 12px;
+      font-size: 32px;
+    }
+
+    .gameOverPanel p {
+      margin: 4px 0;
+      font-size: 16px;
+    }
+
+    .gameOverButtons {
+      display: flex;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .gameOverButtons button {
+      font-family: inherit;
+      font-size: 15px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      background: rgba(255, 255, 255, 0.08);
+      color: white;
+      cursor: pointer;
+    }
+
+    .gameOverButtons button:hover {
+      border-color: white;
+      background: rgba(255, 255, 255, 0.18);
+    }
+
+    #replayBtn {
+      border-color: rgba(76, 175, 80, 0.6);
+      background: rgba(76, 175, 80, 0.25);
+    }
+
+    #exitBtn {
+      border-color: rgba(233, 69, 96, 0.6);
+      background: rgba(233, 69, 96, 0.2);
     }
 
     #canvasWrapper {
@@ -287,6 +355,18 @@
           <div id="aimStickThumb"></div>
         </div>
       </div>
+
+      <div id="gameOverOverlay" class="hidden">
+        <div class="gameOverPanel">
+          <h2>Game Over</h2>
+          <p>Score: <span id="finalScore">0</span></p>
+          <p>High Score: <span id="finalHighScore">0</span></p>
+          <div class="gameOverButtons">
+            <button id="replayBtn" type="button">Replay</button>
+            <button id="exitBtn" type="button">Exit to Menu</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -297,7 +377,7 @@
     const gameArea = document.getElementById("gameArea");
 
     function choose(character) {
-      characterSelect.remove();
+      characterSelect.classList.add("hidden");
       gameArea.classList.remove("hidden");
       startGame(character);
     }
