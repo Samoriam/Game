@@ -201,30 +201,30 @@
       pointer-events: none;
     }
 
-    #touchFire {
+    #aimStickBase {
       position: absolute;
-      right: 28px;
-      bottom: 28px;
-      width: 84px;
-      height: 84px;
+      right: 24px;
+      bottom: 24px;
+      width: 110px;
+      height: 110px;
       border-radius: 50%;
-      border: 2px solid rgba(255, 255, 255, 0.6);
-      background: rgba(233, 69, 96, 0.55);
-      color: white;
-      font-size: 15px;
-      font-weight: bold;
-      font-family: inherit;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      background: rgba(233, 69, 96, 0.12);
+      border: 2px solid rgba(255, 140, 140, 0.45);
       pointer-events: auto;
       touch-action: none;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-tap-highlight-color: transparent;
-      outline: none;
-      padding: 0;
-      margin: 0;
+    }
+
+    #aimStickThumb {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 50px;
+      height: 50px;
+      margin-left: -25px;
+      margin-top: -25px;
+      border-radius: 50%;
+      background: rgba(233, 69, 96, 0.6);
+      pointer-events: none;
     }
   </style>
 </head>
@@ -243,7 +243,7 @@
     </div>
     <div class="rules">
       <p><strong>Desktop:</strong> Arrows = Move | Up = Jump | Down = Crouch (double-tap to lay) | Left-click = Shoot (aim with mouse) | Shift = Reload</p>
-      <p><strong>Mobile:</strong> Drag the joystick to move or jump. Pull it down to aim instead, then tap FIRE to shoot. Ammo reloads automatically when empty.</p>
+      <p><strong>Mobile:</strong> Drag the left joystick to move, jump or crouch. Drag the right joystick to aim - the gun fires automatically once it's lined up with a bird. Ammo reloads automatically when empty.</p>
       <p>Watch for red birds - shooting one enrages it and it attacks! Shoot it again to finish it off. Each hit costs 10% health.</p>
     </div>
   </div>
@@ -264,7 +264,9 @@
         <div id="joystickBase">
           <div id="joystickThumb"></div>
         </div>
-        <button id="touchFire" type="button">FIRE</button>
+        <div id="aimStickBase">
+          <div id="aimStickThumb"></div>
+        </div>
       </div>
     </div>
   </div>

@@ -79,6 +79,8 @@ window.addEventListener("mouseleave", () => {
 });
 
 let manualAimDir = null; // unit vector set while the mobile aim stick is actively deflected
+let autoFireTimer = 0; // cooldown between auto-fired shots while the aim stick is held
+const autoFireRate = 10; // frames between auto-fired shots
 
 function getAimTarget(p) {
   if (manualAimDir) {
@@ -145,6 +147,25 @@ function getAimAngle(p) {
   }
 
   return angle;
+}
+
+// Is the current aim angle lined up with a live bird? Used for mobile
+// auto-fire: the gun fires on its own once the aim stick points at one.
+const autoAimTolerance = 0.08; // radians (~4.5 degrees)
+
+function isAimedAtBird(p, angle) {
+  const originX = p.x + p.width / 2;
+  const originY = p.y + p.height / 2;
+
+  for (const bird of birds) {
+    if (!bird.alive || bird.dying) continue;
+    const birdAngle = Math.atan2(bird.y - originY, bird.x - originX);
+    let diff = Math.abs(birdAngle - angle);
+    if (diff > Math.PI) diff = Math.PI * 2 - diff;
+    if (diff < autoAimTolerance) return true;
+  }
+
+  return false;
 }
 
 // ===== BIRDS =====
@@ -335,7 +356,6 @@ if (joystickBase && joystickThumb) {
     keys["arrowright"] = false;
     keys["arrowup"] = false;
     keys["arrowdown"] = false;
-    manualAimDir = null;
   }
 
   function updateJoystick(clientX, clientY) {
@@ -347,21 +367,10 @@ if (joystickBase && joystickThumb) {
     const dy = (rawDy / dist) * clampedDist;
     joystickThumb.style.transform = `translate(${dx}px, ${dy}px)`;
 
-    if (dy > deadzone) {
-      // Pulled down: switch from moving to aiming with this same stick
-      keys["arrowleft"] = false;
-      keys["arrowright"] = false;
-      keys["arrowup"] = false;
-      keys["arrowdown"] = false;
-      manualAimDir = { x: rawDx / dist, y: rawDy / dist };
-      return;
-    }
-
-    manualAimDir = null;
     keys["arrowleft"] = dx < -deadzone;
     keys["arrowright"] = dx > deadzone;
     keys["arrowup"] = dy < -deadzone;
-    keys["arrowdown"] = false;
+    keys["arrowdown"] = dy > deadzone;
   }
 
   function findTouch(touchList) {
@@ -405,44 +414,72 @@ if (joystickBase && joystickThumb) {
   joystickBase.addEventListener("touchcancel", endJoystickTouch, { passive: false });
 }
 
-// Stationary FIRE button. Uses manualAimDir when the move joystick is
-// pulled down to aim, otherwise falls back to the normal nearest-bird
-// auto-aim.
-const touchFireBtn = document.getElementById("touchFire");
-if (touchFireBtn) {
-  let fireInterval = null;
-  let fireTouchId = null;
+// Aim stick: drag to aim. There is no fire button - the gun auto-fires
+// (see autoFire() in update()) whenever this aim lines up with a bird.
+const aimStickBase = document.getElementById("aimStickBase");
+const aimStickThumb = document.getElementById("aimStickThumb");
+if (aimStickBase && aimStickThumb) {
+  const aimRadius = 45;
+  const aimDeadzone = 10;
+  let aimTouchId = null;
+  let aimCenterX = 0;
+  let aimCenterY = 0;
 
-  const stopFire = () => {
-    if (fireInterval) {
-      clearInterval(fireInterval);
-      fireInterval = null;
+  function findAimTouch(touchList) {
+    for (let i = 0; i < touchList.length; i++) {
+      if (touchList[i].identifier === aimTouchId) return touchList[i];
     }
-    fireTouchId = null;
-  };
+    return null;
+  }
 
-  touchFireBtn.addEventListener("touchstart", (e) => {
+  function updateAimStick(clientX, clientY) {
+    const rawDx = clientX - aimCenterX;
+    const rawDy = clientY - aimCenterY;
+    const dist = Math.hypot(rawDx, rawDy) || 1;
+    const clampedDist = Math.min(dist, aimRadius);
+
+    aimStickThumb.style.transform = `translate(${(rawDx / dist) * clampedDist}px, ${(rawDy / dist) * clampedDist}px)`;
+
+    manualAimDir = dist > aimDeadzone ? { x: rawDx / dist, y: rawDy / dist } : null;
+  }
+
+  aimStickBase.addEventListener("touchstart", (e) => {
     e.preventDefault();
-    if (fireTouchId !== null) return;
-    fireTouchId = e.changedTouches[0].identifier;
+    if (!gameStarted || aimTouchId !== null) return;
 
-    if (!gameStarted) return;
     if (gameOver) {
       resetGame();
       return;
     }
-    shoot();
-    fireInterval = setInterval(shoot, 120);
+
+    const rect = aimStickBase.getBoundingClientRect();
+    aimCenterX = rect.left + rect.width / 2;
+    aimCenterY = rect.top + rect.height / 2;
+    aimTouchId = e.changedTouches[0].identifier;
+    updateAimStick(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
   }, { passive: false });
 
-  touchFireBtn.addEventListener("touchend", (e) => {
+  aimStickBase.addEventListener("touchmove", (e) => {
+    if (aimTouchId === null) return;
+    const touch = findAimTouch(e.changedTouches);
+    if (!touch) return;
     e.preventDefault();
-    stopFire();
+    updateAimStick(touch.clientX, touch.clientY);
   }, { passive: false });
-  touchFireBtn.addEventListener("touchcancel", (e) => {
+
+  const endAimTouch = (e) => {
+    if (aimTouchId === null) return;
+    const touch = findAimTouch(e.changedTouches);
+    if (!touch) return;
     e.preventDefault();
-    stopFire();
-  }, { passive: false });
+
+    aimTouchId = null;
+    aimStickThumb.style.transform = "translate(0, 0)";
+    manualAimDir = null;
+  };
+
+  aimStickBase.addEventListener("touchend", endAimTouch, { passive: false });
+  aimStickBase.addEventListener("touchcancel", endAimTouch, { passive: false });
 }
 
 canvas.addEventListener("click", () => {
@@ -478,6 +515,14 @@ function shoot() {
 // ===== UPDATE =====
 function update() {
   if (gameOver) return;
+
+  // Mobile auto-fire: while actively aiming with the aim stick, shoot on
+  // its own whenever the gun lines up with a bird.
+  if (autoFireTimer > 0) autoFireTimer--;
+  if (manualAimDir && autoFireTimer <= 0 && isAimedAtBird(player, getAimAngle(player))) {
+    shoot();
+    autoFireTimer = autoFireRate;
+  }
 
   // Horizontal movement
   if (keys["arrowleft"] && !keys["arrowright"]) {
