@@ -392,7 +392,7 @@ function spawnGoose() {
   const fromLeft = Math.random() < 0.5;
   const x = fromLeft ? -30 : canvas.width + 30;
   const flying = Math.random() < 0.5;
-  const speed = (2 + Math.random() * 2) * birdSpeedMultiplier();
+  const speed = (1 + Math.random() * 1) * birdSpeedMultiplier();
 
   geese.push({
     x,
