@@ -5,6 +5,8 @@ const maxAmmoDisplay = document.getElementById("maxAmmoDisplay");
 const healthDisplay = document.getElementById("health");
 const scoreDisplay = document.getElementById("score");
 const buffsDisplay = document.getElementById("buffs");
+const highScoreDisplay = document.getElementById("highScore");
+const selectHighScoreDisplay = document.getElementById("selectHighScore");
 
 // ===== CHARACTER COLORS =====
 const characterColors = {
@@ -19,7 +21,7 @@ const player = {
   y: 450,
   width: 40,
   height: 80,
-  speed: 4,
+  speed: 5.5,
   jumpPower: -15,
   gravity: 0.5,
   vy: 0,
@@ -49,6 +51,19 @@ const birdPoints = 100;
 const redBirdPoints = 200;
 const redBirdKillBonus = 100;
 const purpleBirdPoints = 150;
+
+const highScoreKey = "birdShooterHighScore";
+let highScore = Number(localStorage.getItem(highScoreKey)) || 0;
+if (highScoreDisplay) highScoreDisplay.textContent = highScore;
+if (selectHighScoreDisplay) selectHighScoreDisplay.textContent = highScore;
+
+function checkHighScore() {
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem(highScoreKey, highScore);
+    if (highScoreDisplay) highScoreDisplay.textContent = highScore;
+  }
+}
 
 // ===== GUN & AMMO =====
 let ammo = 40;
@@ -219,11 +234,19 @@ let birdSpawnTimer = 0;
 const purpleBirdSpawnChance = 0.05; // rare
 const redBirdSpawnChance = 0.2;
 
+// Birds fly a little faster for every birdSpeedUpInterval points scored
+const birdSpeedUpInterval = 500;
+const birdSpeedUpAmount = 0.15; // +15% flight speed per tier
+
+function birdSpeedMultiplier() {
+  return 1 + Math.floor(score / birdSpeedUpInterval) * birdSpeedUpAmount;
+}
+
 function spawnBird() {
   const fromLeft = Math.random() < 0.5;
   const x = fromLeft ? -40 : canvas.width + 40;
   const y = 50 + Math.random() * 180;
-  const speed = 1.5 + Math.random() * 2.5;
+  const speed = (1.5 + Math.random() * 2.5) * birdSpeedMultiplier();
 
   const typeRoll = Math.random();
   const isPurple = typeRoll < purpleBirdSpawnChance;
@@ -754,6 +777,7 @@ function update() {
 
           if (health <= 0) {
             gameOver = true;
+            checkHighScore();
           }
         }
       }
@@ -1018,7 +1042,8 @@ function draw() {
     ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 10);
     ctx.font = "20px Arial";
     ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 20);
-    ctx.fillText("Press R to Restart", canvas.width / 2, canvas.height / 2 + 50);
+    ctx.fillText(`High Score: ${highScore}`, canvas.width / 2, canvas.height / 2 + 48);
+    ctx.fillText("Press R to Restart", canvas.width / 2, canvas.height / 2 + 78);
     ctx.textAlign = "left";
   }
 

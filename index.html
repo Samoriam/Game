@@ -43,6 +43,12 @@
       text-align: center;
     }
 
+    #selectHighScoreLine {
+      margin: 0;
+      font-size: 15px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+
     .choices {
       display: flex;
       gap: 24px;
@@ -240,6 +246,7 @@
 <body>
   <div id="characterSelect">
     <h1>Choose Your Character</h1>
+    <p id="selectHighScoreLine">High Score: <span id="selectHighScore">0</span></p>
     <div class="choices">
       <button class="choice" id="pickRed">
         <div class="portrait red"></div>
@@ -263,6 +270,7 @@
       <span>Ammo: <span id="ammo">40</span>/<span id="maxAmmoDisplay">40</span></span>
       <span>Health: <span id="health">100</span>%</span>
       <span>Score: <span id="score">0</span></span>
+      <span>Best: <span id="highScore">0</span></span>
       <span id="buffs"></span>
     </div>
 
